@@ -37,12 +37,12 @@ def get_leader_state(masterurl):
     return get_master_state(masterstate["leader"])
     
 
-def get_cluster_stats(masterHostPort):
-    leader = get_leader_state(masterHostPort)
+def get_cluster_stats(masterPID):
+    leader = get_leader_state(masterPID)
     totalMem, usedMem, totalCPU, usedCPU, totalDisk, usedDisk = (0, 0, 0, 0, 0, 0)
 
     for s in leader["slaves"]:
-        print "Getting stats for slave %s" % s["pid"]
+        print "Getting stats for %s" % s["pid"]
         url = "http://%s/stats.json" % s["pid"]
         slave = get_slave_stats(s["pid"])
         totalMem += slave["slave/mem_total"]
@@ -64,6 +64,10 @@ def get_cluster_stats(masterHostPort):
     collect_metric("disk.total", totalDisk, ts)
     collect_metric("disk.used", usedDisk, ts)
     
+    return leader["pid"]
+    
 while True:
-    get_cluster_stats(masterHostPort)
-    time.sleep(50)
+    # get_cluster_stats returns the leader pid, so we don't have to repeat leader
+    # lookup each time
+    masterHostPort = get_cluster_stats(masterHostPort)
+    time.sleep(1)
