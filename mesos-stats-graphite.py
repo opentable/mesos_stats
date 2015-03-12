@@ -66,4 +66,4 @@ def get_cluster_stats(masterHostPort):
     
 while True:
     get_cluster_stats(masterHostPort)
-    time.sleep(1)
+    time.sleep(50)
