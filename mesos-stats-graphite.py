@@ -1,4 +1,4 @@
-#!/usr/local/bin/python
+#!/usr/bin/env python
 import json
 import requests
 import socket
@@ -6,13 +6,17 @@ import time
 import sys
 
 if len(sys.argv) < 5:
-    print "Expected 4 args: mesos master host:port, graphite host, graphite port, graphite prefix"
+    print "Usage: <mesos master host> <graphite host> <graphite port> <graphite prefix> [period seconds=60]"
     sys.exit(1)
 
-masterHostPort = sys.argv[1]
+masterHost = sys.argv[1] + ":5050"
 graphiteHost = sys.argv[2]
 graphitePort = int(sys.argv[3])
 graphitePrefix = sys.argv[4]
+try:
+    period = float(sys.argv[5])
+except:
+    period = 60
 
 def collect_metric(name, value, timestamp):
     sock = socket.socket()
@@ -66,8 +70,11 @@ def get_cluster_stats(masterPID):
     
     return leader["pid"]
     
-while True:
-    # get_cluster_stats returns the leader pid, so we don't have to repeat leader
-    # lookup each time
-    masterHostPort = get_cluster_stats(masterHostPort)
-    time.sleep(1)
+try:
+    while True:
+        # get_cluster_stats returns the leader pid, so we don't have to repeat leader
+        # lookup each time
+        masterHostPort = get_cluster_stats(masterHostPort)
+        time.sleep(period)
+except KeyboardInterrupt, SystemExit:
+    print "Bye!"
