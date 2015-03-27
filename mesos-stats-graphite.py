@@ -49,12 +49,73 @@ def get_leader_state(masterurl):
     return get_master_state(masterstate["leader"])
     
 
+class Metric:
+    def __init__(self, path, name, *measurements):
+        self.name = name
+        self.path = path
+        self.measurements = measurements
+        self.data = []
+
+    def Add(self, slave): self.data.append(slave[self.path])
+
+    def Sum(self): return sum(self.data)
+
+    def DatapointName(self, dp):
+        return self.name.replace("[]", dp)
+
+    def Datapoint(self, name, value):
+        return (self.DatapointName(name), value)
+
+    def Results(self):
+        results = []
+        for f in self.measurements:
+            results += f(self)
+        return results
+
+def Sum(metric):
+    result = sum(metric.data)    
+    return [metric.Datapoint("sum", result)]
+
+def Mean(metric):
+    d = metric.data
+    result = float(sum(d))/len(d) if len(d) > 0 else float('nan')
+    return [metric.Datapoint("mean", result)]
+
+def Each(metric):
+    results = []
+    for i, d in enumerate(metric.data):
+        results.append(metric.Datapoint("{0}".format(i), metric.data[i]))
+    return results
+
+def makeMetrics():
+    return [
+        Metric("slave/mem_total",       "slave.[].mem.total",               Each),
+        Metric("slave/mem_used",        "slave.[].mem.used",                Each),
+        Metric("slave/mem_percent",     "slave.[].mem.percent",             Each),
+        Metric("slave/cpus_total",      "slave.[].cpus.total",              Each),
+        Metric("slave/cpus_used",       "slave.[].cpus.used",               Each),
+        Metric("slave/cpus_percent",    "slave.[].cpus.percent",            Each),
+        Metric("slave/disk_total",      "slave.[].disk.total",              Each),
+        Metric("slave/disk_used",       "slave.[].disk.total",              Each),
+        Metric("slave/tasks_running",   "slave.[].tasks.running",           Each),
+        Metric("staged_tasks",          "slave.[].tasks.staged",            Each),
+        Metric("system/load_1min",      "slave.[].system.load.1min",        Each),
+        Metric("system/load_5min",      "slave.[].system.load.5min",        Each),
+        Metric("system/load_15min",     "slave.[].system.load.15min",       Each),
+        Metric("system/mem_free_bytes", "slave.[].system.mem.free.bytes",   Each),
+        Metric("system/mem_total_bytes","slave.[].system.mem.total.bytes",  Each),
+    ]
+
+
 def get_cluster_stats(masterPID):
     leader = get_leader_state(masterPID)
     if leader == None:
         print "No leader found"
         return None
+    
     totalMem, usedMem, totalCPU, usedCPU, totalDisk, usedDisk = (0, 0, 0, 0, 0, 0)
+
+    metrics = makeMetrics()
 
     for s in leader["slaves"]:
         print "Getting stats for %s" % s["pid"]
@@ -62,25 +123,16 @@ def get_cluster_stats(masterPID):
         if slave == None:
             print "Slave lost"
             continue
-        totalMem += slave["slave/mem_total"]
-        usedMem  += slave["slave/mem_used"]
-        totalCPU += slave["slave/cpus_total"]
-        usedCPU  += slave["slave/cpus_used"]
-        totalDisk+= slave["slave/disk_total"]
-        usedDisk += slave["slave/disk_used"]
+        for m in metrics:
+            m.Add(slave)
 
-    print "MEM %s/%s; CPU %s/%s; Disk %s/%s" % (usedMem,totalMem,usedCPU,totalCPU,usedDisk,totalDisk)
-
-    # hierarchy: mesos.qa-uswest2.mem.total
-    #            mesos.qa-uswest2.mem.used
     ts = int(time.time())
-    collect_metric("mem.total", totalMem, ts)
-    collect_metric("mem.used", usedMem, ts)
-    collect_metric("cpu.total", totalCPU, ts)
-    collect_metric("cpu.used", usedCPU, ts)
-    collect_metric("disk.total", totalDisk, ts)
-    collect_metric("disk.used", usedDisk, ts)
-    
+    for m in metrics:
+        for r in m.Results():
+            k, v = r
+            print "{0} = {1}".format(k, v)
+            collect_metric(k, v, ts)
+
     return leader["pid"]
     
 try:
