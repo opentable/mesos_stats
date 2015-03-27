@@ -81,29 +81,31 @@ def Mean(metric):
     result = float(sum(d))/len(d) if len(d) > 0 else float('nan')
     return [metric.Datapoint("mean", result)]
 
-def Each(metric):
-    results = []
-    for i, d in enumerate(metric.data):
-        results.append(metric.Datapoint("{0}".format(i), metric.data[i]))
-    return results
+def Each(scale=1):
+    def Each_scale(metric):
+        results = []
+        for i, d in enumerate(metric.data):
+            results.append(metric.Datapoint("{0}".format(i), metric.data[i]*scale))
+        return results
+    return Each_scale
 
 def makeMetrics():
     return [
-        Metric("slave/mem_total",       "slave.[].mem.total",               Each),
-        Metric("slave/mem_used",        "slave.[].mem.used",                Each),
-        Metric("slave/mem_percent",     "slave.[].mem.percent",             Each),
-        Metric("slave/cpus_total",      "slave.[].cpus.total",              Each),
-        Metric("slave/cpus_used",       "slave.[].cpus.used",               Each),
-        Metric("slave/cpus_percent",    "slave.[].cpus.percent",            Each),
-        Metric("slave/disk_total",      "slave.[].disk.total",              Each),
-        Metric("slave/disk_used",       "slave.[].disk.total",              Each),
-        Metric("slave/tasks_running",   "slave.[].tasks.running",           Each),
-        Metric("staged_tasks",          "slave.[].tasks.staged",            Each),
-        Metric("system/load_1min",      "slave.[].system.load.1min",        Each),
-        Metric("system/load_5min",      "slave.[].system.load.5min",        Each),
-        Metric("system/load_15min",     "slave.[].system.load.15min",       Each),
-        Metric("system/mem_free_bytes", "slave.[].system.mem.free.bytes",   Each),
-        Metric("system/mem_total_bytes","slave.[].system.mem.total.bytes",  Each),
+        Metric("slave/mem_total",       "slave.[].mem.total",               Each()),
+        Metric("slave/mem_used",        "slave.[].mem.used",                Each()),
+        Metric("slave/mem_percent",     "slave.[].mem.percent",             Each(scale=100)),
+        Metric("slave/cpus_total",      "slave.[].cpus.total",              Each()),
+        Metric("slave/cpus_used",       "slave.[].cpus.used",               Each()),
+        Metric("slave/cpus_percent",    "slave.[].cpus.percent",            Each(scale=100)),
+        Metric("slave/disk_total",      "slave.[].disk.total",              Each()),
+        Metric("slave/disk_used",       "slave.[].disk.total",              Each()),
+        Metric("slave/tasks_running",   "slave.[].tasks.running",           Each()),
+        Metric("staged_tasks",          "slave.[].tasks.staged",            Each()),
+        Metric("system/load_1min",      "slave.[].system.load.1min",        Each(scale=1000)),
+        Metric("system/load_5min",      "slave.[].system.load.5min",        Each(scale=1000)),
+        Metric("system/load_15min",     "slave.[].system.load.15min",       Each(scale=1000)),
+        Metric("system/mem_free_bytes", "slave.[].system.mem.free.bytes",   Each()),
+        Metric("system/mem_total_bytes","slave.[].system.mem.total.bytes",  Each()),
     ]
 
 
