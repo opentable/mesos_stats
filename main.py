@@ -8,7 +8,7 @@ import pickle
 import struct
 
 if len(sys.argv) < 4:
-    print "Usage: %s <mesos master host> <carbon host> <graphite prefix> [period seconds=60]" % sys.argv[0]
+    log("Usage: %s <mesos master host> <carbon host> <graphite prefix> [period seconds=60]" % sys.argv[0])
     sys.exit(1)
 
 masterHost = sys.argv[1]
@@ -19,15 +19,26 @@ try:
 except:
     period = 60
 
-def collect_metric(name, value, timestamp):
-    send_carbon("%s %d %d\n" % (name, value, timestamp), 2003)
+class carbon:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.sock = socket.socket()
+        self.sock.connect((host, port))
+    def send(self, message):
+        self.sock.send(message)
+    def close(self):
+        self.sock.close()
 
 def send_metrics_slow(metrics):
     ts = int(time.time())
+    c = carbon(carbonHost, 2003)
     for m in metrics:
         for r in m.Results():
             k, v = r
-            collect_metric(k, v, ts)
+            #print "%s = %d" % (k, v)
+            c.send("%s %d %d\n" % (k, v, ts))
+    c.close()
 
 def send_metrics(metrics):
     tuples = []
@@ -35,33 +46,31 @@ def send_metrics(metrics):
     for m in metrics:
         for r in m.Results():
             k, v = r
-            #print "{0} = {1}".format(k, v)
             tuples.append((k, (ts, v))) 
+    #print tuples
     payload = pickle.dumps(tuples, protocol=2)
-    #print tuples 
     header = struct.pack("!L", len(payload))
     message = header + payload
-    send_carbon(message, 2004)
-
-def send_carbon(message, port):
-    sock = socket.socket()
-    sock.connect((carbonHost, port))
-    sock.send(message)
-    sock.close()
+    c = carbon(carbonHost, 2004)
+    c.send(message)
+    c.close()
 
 def try_get_json(url):
     try:
         return json.loads(requests.get(url).text)
     except requests.exceptions.ConnectionError as e:
-        print "GET %s failed: %s" % (url, e)
+        log("GET %s failed: %s" % (url, e))
         return None
 
 def get_slave_stats(slavePID):
     return try_get_json("http://%s/metrics/snapshot" % slavePID)
 
+def get_cluster_metrics(leaderPID):
+    return try_get_json("http://%s/metrics/snapshot" % leaderPID)
+
 def get_master_state(masterPID):
     url = "http://%s/state.json" % masterPID
-    print "Getting master state from: %s" % url
+    log("Getting master state from: %s" % url)
     return try_get_json(url)
 
 def get_leader_state(masterurl):
@@ -75,7 +84,7 @@ def get_leader_state(masterurl):
 
 class Metric:
     def __init__(self, path, name, *measurements):
-        self.name = name
+        self.name = graphitePrefix + "." + name
         self.path = path
         self.measurements = measurements
         self.data = []
@@ -113,7 +122,7 @@ def Each(scale=1):
         return results
     return Each_scale
 
-def makeMetrics():
+def makeSlaveMetrics():
     return [
         Metric("slave/mem_total",       "slave.[].mem.total",               Each()),
         Metric("slave/mem_used",        "slave.[].mem.used",                Each()),
@@ -132,40 +141,69 @@ def makeMetrics():
         Metric("system/mem_total_bytes","slave.[].system.mem.total.bytes",  Each()),
     ]
 
+def makeClusterMetrics():
+    return [
+            Metric("master/cpus_percent",     "cluster.cpus.percent",     Each(scale=100)),
+            Metric("master/cpus_total",       "cluster.cpus.total",       Each()),
+            Metric("master/cpus_used",        "cluster.cpus.used",        Each()),
+            Metric("master/mem_percent",      "cluster.mem.percent",      Each(scale=100)),
+            Metric("master/mem_total",        "cluster.mem.total",        Each()),
+            Metric("master/mem_used",         "cluster.mem.used",         Each()),
+            Metric("master/disk_percent",     "cluster.disk.percent",     Each(scale=100)),
+            Metric("master/disk_total",       "cluster.disk.total",       Each()),
+            Metric("master/disk_used",        "cluster.disk.used",        Each()),
+            Metric("master/slaves_connected", "cluster.slaves.connected", Each()),
+            Metric("master/tasks_failed",     "cluster.tasks.failed",     Each()),
+            Metric("master/tasks_finished",   "cluster.tasks.finished",   Each()),
+            Metric("master/tasks_killed",     "cluster.tasks.killed",     Each()),
+            Metric("master/tasks_lost",       "cluster.tasks.lost",       Each()),
+            Metric("master/tasks_running",    "cluster.tasks.running",    Each()),
+            Metric("master/tasks_staging",    "cluster.tasks.staging",    Each()),
+            Metric("master/tasks_starting",   "cluster.tasks.starting",   Each()),
+    ]
+
+
 
 def get_cluster_stats(masterPID):
     leader = get_leader_state(masterPID)
     if leader == None:
-        print "No leader found"
+        log("No leader found")
         return None
     
-    totalMem, usedMem, totalCPU, usedCPU, totalDisk, usedDisk = (0, 0, 0, 0, 0, 0)
+    clusterMetrics = makeClusterMetrics()
+    cluster = get_cluster_metrics(leader["pid"])
+    for m in clusterMetrics:
+        m.Add(cluster)
 
-    metrics = makeMetrics()
+    slaveMetrics = makeSlaveMetrics()
 
     for s in leader["slaves"]:
-        print "Getting stats for %s" % s["pid"]
+        log("Getting stats for %s" % s["pid"])
         slave = get_slave_stats(s["pid"])
         if slave == None:
-            print "Slave lost"
+            log("Slave lost")
             continue
-        for m in metrics:
+        for m in slaveMetrics:
             m.Add(slave)
 
-    # TODO: Open 
-    try:
-        send_metrics(metrics)
-    except socket.error:
-        print "WARNING: Unable to send pickled stats on port 2004; Attempting plaintext (slow) on 2003..."
-        try:
-            send_metrics_slow(metrics)
-        except socket.error:
-            print "ERROR: Unable to send plantext on port 2003"
+    allMetrics = clusterMetrics + slaveMetrics
 
-    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    print "Metrics sent at " + ts
+    try:
+        send_metrics(allMetrics)
+    except socket.error:
+        log("WARNING: Unable to send pickled stats on port 2004; Attempting plaintext (slow) on 2003...")
+        try:
+            send_metrics_slow(allMetrics)
+        except socket.error:
+            log("ERROR: Unable to send plantext on port 2003")
+
+    log("Metrics sent.")
     return leader["pid"]
     
+def log(message):
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    print '%s %s' % (ts, message)
+
 try:
     while True:
         # get_cluster_stats returns the leader pid, so we don't have to repeat leader
@@ -175,7 +213,7 @@ try:
         if leaderHostPort != None:
             masterHostPort = leaderHostPort
         else:
-            print "No stats this time; sleeping"
+            log("No stats this time; sleeping")
         time.sleep(period)
 except KeyboardInterrupt, SystemExit:
     print "Bye!"
