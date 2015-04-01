@@ -4,6 +4,8 @@ import requests
 import socket
 import time
 import sys
+import pickle
+import struct
 
 if len(sys.argv) < 4:
     print "Usage: %s <mesos master host> <carbon host> <graphite prefix> [period seconds=60]" % sys.argv[0]
@@ -16,13 +18,35 @@ try:
     period = float(sys.argv[4])
 except:
     period = 60
-carbonPort = 2003
 
 def collect_metric(name, value, timestamp):
+    send_carbon("%s %d %d\n" % (name, value, timestamp), 2003)
+
+def send_metrics_slow(metrics):
+    ts = int(time.time())
+    for m in metrics:
+        for r in m.Results():
+            k, v = r
+            collect_metric(k, v, ts)
+
+def send_metrics(metrics):
+    tuples = []
+    ts = int(time.time())
+    for m in metrics:
+        for r in m.Results():
+            k, v = r
+            #print "{0} = {1}".format(k, v)
+            tuples.append((k, (ts, v))) 
+    payload = pickle.dumps(tuples, protocol=2)
+    #print tuples 
+    header = struct.pack("!L", len(payload))
+    message = header + payload
+    send_carbon(message, 2004)
+
+def send_carbon(message, port):
     sock = socket.socket()
-    sock.connect((carbonHost, carbonPort))
-    name = graphitePrefix + "." + name
-    sock.send("%s %d %d\n" % (name, value, timestamp))
+    sock.connect((carbonHost, port))
+    sock.send(message)
     sock.close()
 
 def try_get_json(url):
@@ -33,7 +57,7 @@ def try_get_json(url):
         return None
 
 def get_slave_stats(slavePID):
-    return try_get_json("http://%s/stats.json" % slavePID)
+    return try_get_json("http://%s/metrics/snapshot" % slavePID)
 
 def get_master_state(masterPID):
     url = "http://%s/state.json" % masterPID
@@ -100,7 +124,7 @@ def makeMetrics():
         Metric("slave/disk_total",      "slave.[].disk.total",              Each()),
         Metric("slave/disk_used",       "slave.[].disk.total",              Each()),
         Metric("slave/tasks_running",   "slave.[].tasks.running",           Each()),
-        Metric("staged_tasks",          "slave.[].tasks.staged",            Each()),
+        Metric("slave/tasks_staging",   "slave.[].tasks.staging",           Each()),
         Metric("system/load_1min",      "slave.[].system.load.1min",        Each(scale=1000)),
         Metric("system/load_5min",      "slave.[].system.load.5min",        Each(scale=1000)),
         Metric("system/load_15min",     "slave.[].system.load.15min",       Each(scale=1000)),
@@ -128,13 +152,18 @@ def get_cluster_stats(masterPID):
         for m in metrics:
             m.Add(slave)
 
-    ts = int(time.time())
-    for m in metrics:
-        for r in m.Results():
-            k, v = r
-            print "{0} = {1}".format(k, v)
-            collect_metric(k, v, ts)
+    # TODO: Open 
+    try:
+        send_metrics(metrics)
+    except socket.error:
+        print "WARNING: Unable to send pickled stats on port 2004; Attempting plaintext (slow) on 2003..."
+        try:
+            send_metrics_slow(metrics)
+        except socket.error:
+            print "ERROR: Unable to send plantext on port 2003"
 
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    print "Metrics sent at " + ts
     return leader["pid"]
     
 try:
