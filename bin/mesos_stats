@@ -28,6 +28,7 @@ try:
             log("No stats this time; sleeping")
         else:
             carbon.send_metrics(metrics)
+            log("Metrics sent.")
         time.sleep(period)
 except KeyboardInterrupt, SystemExit:
     print "Bye!"
