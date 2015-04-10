@@ -6,21 +6,33 @@ class Metric:
         self.measurements = measurements
         self.data = []
 
-    def Add(self, slave): self.data.append(slave[self.path])
+    def Add(self, datum, keys=[]): 
+        self.data.append((datum[self.path], keys))
 
-    def Sum(self): return sum(self.data)
+    def DatapointName(self, keys):
+        clean_keys = ()
+        for k in keys:
+            clean = k.replace(".", "_")
+            clean_keys += (clean,)
+        return self.name.replace("[]", "%s") % clean_keys
 
-    def DatapointName(self, dp):
-        return self.name.replace("[]", dp)
-
-    def Datapoint(self, name, value):
-        return (self.DatapointName(name), value)
+    def Datapoint(self, keys, value):
+        return (self.DatapointName(keys), value)
 
     def Results(self):
         results = []
         for f in self.measurements:
             results += f(self)
         return results
+
+def Each(scale=1):
+    def Each_scale(metric):
+        results = []
+        for i, dk in enumerate(metric.data):
+            d, keys = dk 
+            results.append(metric.Datapoint(keys, metric.data[i]*scale))
+        return results
+    return Each_scale
 
 def Sum(metric):
     result = sum(metric.data)    
@@ -30,12 +42,4 @@ def Mean(metric):
     d = metric.data
     result = float(sum(d))/len(d) if len(d) > 0 else float('nan')
     return [metric.Datapoint("mean", result)]
-
-def Each(scale=1):
-    def Each_scale(metric):
-        results = []
-        for i, d in enumerate(metric.data):
-            results.append(metric.Datapoint("{0}".format(i), metric.data[i]*scale))
-        return results
-    return Each_scale
 

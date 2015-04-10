@@ -8,6 +8,10 @@ class Mesos:
         self.leader_state = None
         self.slave_states = None
 
+    def reset(self):
+        self.leader_state = None
+        self.slave_states = None
+
     def get_master_state(self):
         url = "http://%s/state.json" % self.leader_pid
         log("Getting master state from: %s" % url)
@@ -25,25 +29,29 @@ class Mesos:
             self.leader_pid = master["leader"]
         return self.state()
 
+    def get_cluster_stats(self):
+        return try_get_json("http://%s/metrics/snapshot" % self.state()["leader"])
+
     def get_slave(self, slave_pid):
         return try_get_json("http://%s/metrics/snapshot" % slave_pid)
 
     def get_slave_statistics(self, slave_pid):
-        return try_get_json("http://%s/monitor/statistics" % slave_pid)
+        return try_get_json("http://%s/monitor/statistics.json" % slave_pid)
     
     def slaves(self):
         if self.slave_states != None:
             return self.slave_states
         self.slave_states = {}
-        for slave_pid in self.state()["slaves"]:
+        for slave in self.state()["slaves"]:
+            slave_pid = slave["pid"]
             log("Getting stats for %s" % slave_pid)
-            slave = self.get_slave(slave_pid)
+            slave_state = self.get_slave(slave_pid)
             if slave == None:
                 log("Slave lost: %s" % slave_pid)
                 continue
-            slave_statistics = self.get_slave_statistics(slave_pid)
-            self.slave_states[slave_pid] = self.get_slave(slave_pid)
-            self.slave_states[slave_pid]["statistics"] = slave_statistics 
+            tasks = self.get_slave_statistics(slave_pid)
+            self.slave_states[slave_pid] = slave_state
+            self.slave_states[slave_pid]["task_details"] = tasks
 
         return self.slave_states
 
@@ -66,16 +74,18 @@ def slave_metrics(mesos):
         Metric("system/mem_total_bytes", "slave.[].system.mem.total.bytes",  Each()),
     ]
 
-    for pid, s in mesos.slaves():
+    for pid in mesos.slaves():
+        slave = mesos.slaves()[pid]
         for m in metrics:
-            m.Add(slave)
+            m.Add(slave, [pid])
 
     return metrics
 
-def slave_singluarity_task_metrics(mesos):
+def slave_task_metrics(mesos):
     ms = []
-    for pid, slave in mesos.Slaves():
-        prefix = "slave.%s.executors.singularity.tasks.[]" % pid
+    for pid in mesos.slaves():
+        slave = mesos.slaves()[pid]
+        prefix = "slave.[].executors.singularity.tasks.[]"
         metrics = [
             Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs", Each()),
             Metric("cpus_user_time_secs",   prefix + ".cpus.user_time_secs",   Each()),
@@ -84,8 +94,9 @@ def slave_singluarity_task_metrics(mesos):
             Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes",         Each()),
         ]
         for m in metrics:
-            for t in slave.tasks:
-                m.Add(t)
+            for t in slave["task_details"]:
+                # TODO:m.Add(t, "key1", "key2", ...)
+                m.Add(t["statistics"], [pid, t["executor_id"]])
 
         ms += metrics
 
@@ -114,7 +125,7 @@ def cluster_metrics(mesos):
     ]
 
     for m in metrics:
-        m.Add(mesos.state())
+        m.Add(mesos.get_cluster_stats())
 
     return metrics
    

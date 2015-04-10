@@ -1,5 +1,6 @@
 import socket
 import time
+import os
 
 class Carbon:
     def __init__(self, host, prefix, pickle=False):
@@ -49,7 +50,12 @@ class Carbon:
         try:
             self.ensure_connected(2003)
             def send(k, v):
-                self.sock.send("%s %f %d\n" % (k, v, ts))
+                print "SEND: %s = %s" % (k, v[0])
+                try:
+                    pkt = "%s %f %d\n" % (k, float(v[0]), ts)
+                    self.sock.send(pkt)
+                except TypeError:
+                    print "Got %s; want float" % v
             self.forEachPrefixedMetric(metrics, send)
         finally:
             self.close()
