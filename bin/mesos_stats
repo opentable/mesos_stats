@@ -25,6 +25,7 @@ carbon = Carbon(carbon_host, graphite_prefix)
 
 try:
     while True:
+        next_run = time.time() + period
         mesos.reset()
         slave = slave_metrics(mesos)
         slave_tasks = slave_task_metrics(mesos)
@@ -35,6 +36,12 @@ try:
         else:
             carbon.send_metrics(metrics)
             log("Metrics sent.")
-        time.sleep(period)
+        sleep = next_run - time.time()
+        if sleep < 0:
+            log("ERROR: Metrics collection took longer than %ds" % period)
+            sleep = period + sleep
+        log("Sleeping for %ds" % sleep)
+        time.sleep(sleep)
 except KeyboardInterrupt, SystemExit:
     print "Bye!"
+
