@@ -2,12 +2,14 @@
 
 Scripts to collect mesos cluster stats.
 
-## main.py
-
-Usage:
-
+## Installation:
 ```shell
-shell> ./main.py <MASTER_HOST> <GRAPHITE_HOST> <GRAPHITE_PREFIX> [<SLEEP_SECONDS=60>]
+# Clone this repo, cd into the directory, and do:
+shell> pip install . 
+
+## Usage:
+```shell
+shell> mesos_stats <MASTER_HOST> <GRAPHITE_HOST> <GRAPHITE_PREFIX> [<SLEEP_SECONDS=60>]
 ```
 
 Where:
@@ -15,3 +17,4 @@ Where:
 - `<GRAPHITE_HOST>` is the host for your carbon instance, e.g. `carbon.host.com`
 - `<GRAPHITE_PREFIX>` is a prefix for the stats, e.g. `mesos.production.eu`
 - `<SLEEP_SECONDS>` is the number of seconds to sleep between gathering date (default 60)
+
