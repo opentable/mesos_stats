@@ -10,6 +10,8 @@ def try_get_json(url):
     except requests.exceptions.ConnectionError as e:
         log("GET %s failed: %s" % (url, e))
         return None
+    except requests.exceptions.ReadTimeout:
+        log("GET %s timed out." % url)
    
 def log(message):
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
