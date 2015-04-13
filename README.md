@@ -6,6 +6,7 @@ Scripts to collect mesos cluster stats.
 ```shell
 # Clone this repo, cd into the directory, and do:
 shell> pip install . 
+```
 
 ## Usage:
 ```shell
