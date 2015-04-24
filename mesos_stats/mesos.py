@@ -1,6 +1,5 @@
 from metric import Metric, Each
-from mesos_stats import log, try_get_json
-import requests
+from util import log, try_get_json
 
 class Mesos:
     def __init__(self, master_pid):
