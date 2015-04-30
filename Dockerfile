@@ -6,4 +6,5 @@ ADD . /source
 WORKDIR /source
 RUN pip install .
 
+ENTRYPOINT ["mesos_stats"]
 
