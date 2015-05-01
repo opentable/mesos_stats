@@ -15,6 +15,7 @@ class Carbon:
             raise Exception("Attempt to connect an already connected socket.")
         self.port = port
         self.sock = socket.socket()
+        self.sock.settimeout(1.0)
         self.sock.connect((self.host, self.port))
 
     def ensure_connected(self, port):
@@ -51,12 +52,9 @@ class Carbon:
             self.ensure_connected(2003)
             def send(k, v):
                 v = float(v)
-                print "SEND: %s = %s" % (k, v)
-                try:
-                    pkt = "%s %f %d\n" % (k, v, ts)
-                    self.sock.send(pkt)
-                except TypeError:
-                    print "Got %s; want float" % v
+                #print "SEND: %s = %s" % (k, v)
+                pkt = "%s %f %d\n" % (k, v, ts)
+                self.sock.send(pkt)
             self.forEachPrefixedMetric(metrics, send)
         finally:
             self.close()

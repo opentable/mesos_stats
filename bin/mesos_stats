@@ -24,36 +24,43 @@ mesos = Mesos(master_pid)
 # cabon is persistent, it manages connections and serialisation
 carbon = Carbon(carbon_host, graphite_prefix)
 
-while True:
-    try:
-        next_run = time.time() + period
-        mesos.reset()
-        slave = slave_metrics(mesos)
-        slave_tasks = slave_task_metrics(mesos)
-        cluster = cluster_metrics(mesos)
-        metrics = slave + slave_tasks + cluster
-        if len(metrics) == 0:
-            log("No stats this time; sleeping")
+def main_loop():
+    while True:
+        try:
+            next_run = time.time() + period
+            mesos.reset()
+            slave = slave_metrics(mesos)
+            slave_tasks = slave_task_metrics(mesos)
+            cluster = cluster_metrics(mesos)
+            metrics = slave + slave_tasks + cluster
+            if len(metrics) == 0:
+                log("No stats this time; sleeping")
+            else:
+                carbon.send_metrics(metrics)
+        except KeyboardInterrupt, SystemExit:
+            raise
+        except Exception as e:
+            traceback.print_exc()
+            log("Unhandled exception: %s" % e)
+        except object as o:
+            traceback.print_exc()
+            log("Unhandled exception object: %s" % o)
+        except:
+            traceback.print_exc()
+            log("Unhandled unknown exception.")
         else:
-            carbon.send_metrics(metrics)
-            log("Metrics sent.")
-        sleep = next_run - time.time()
-        if sleep < 0:
-            log("ERROR: Metrics collection took longer than %ds" % period)
-            sleep = period + sleep
-        log("Sleeping for %ds" % sleep)
-        time.sleep(sleep)
-    except KeyboardInterrupt, SystemExit:
-        print "Bye!"
-        sys.exit(0)
-    except Exception as e:
-        traceback.print_exc()
-        log("Unhandled exception: %s" % e)
-    except object as o:
-        traceback.print_exc()
-        log("Unhandled exception object: %s" % o)
-    except:
-        traceback.print_exc()
-        log("Unhandled unknown exception.")
+            log("Metrics sent successfully.")
+        finally:
+            sleep = next_run - time.time()
+            if sleep < 0:
+                log("ERROR: Metrics collection took longer than %ds" % period)
+                sleep = period + sleep
+            log("Sleeping for %ds" % sleep)
+            time.sleep(sleep)
 
+try:
+    main_loop()
+except KeyboardInterrupt, SystemExit:
+    print "Bye!"
+    sys.exit(0)
 

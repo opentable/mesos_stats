@@ -28,13 +28,10 @@ class Metric:
         return results
 
 def Each(scale=1):
-    print ("EACH CALLED! Scale = %d" % scale)
     def Each_scale(metric):
-        print ("CLOSURE CALLED! Scale = %d" % scale)
         results = []
         for i, dk in enumerate(metric.data):
             d, keys = dk 
-            print "ITERATING; d=%d" % d
             results.append(metric.Datapoint(keys, d*scale))
         return results
     return Each_scale
