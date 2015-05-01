@@ -1,6 +1,8 @@
 
 class Metric:
     def __init__(self, path, name, *measurements):
+        if measurements == None or len(measurements) == 0:
+            measurements = [Each()]
         self.name = name
         self.path = path
         self.measurements = measurements
@@ -26,20 +28,14 @@ class Metric:
         return results
 
 def Each(scale=1):
+    print ("EACH CALLED! Scale = %d" % scale)
     def Each_scale(metric):
+        print ("CLOSURE CALLED! Scale = %d" % scale)
         results = []
         for i, dk in enumerate(metric.data):
             d, keys = dk 
-            results.append(metric.Datapoint(keys, metric.data[i]*scale))
+            print "ITERATING; d=%d" % d
+            results.append(metric.Datapoint(keys, d*scale))
         return results
     return Each_scale
-
-def Sum(metric):
-    result = sum(metric.data)    
-    return [metric.Datapoint("sum", result)]
-
-def Mean(metric):
-    d = metric.data
-    result = float(sum(d))/len(d) if len(d) > 0 else float('nan')
-    return [metric.Datapoint("mean", result)]
 

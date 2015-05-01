@@ -56,21 +56,21 @@ class Mesos:
 
 def slave_metrics(mesos):
     metrics = [
-        Metric("slave/mem_total",        "slave.[].mem.total",               Each()),
-        Metric("slave/mem_used",         "slave.[].mem.used",                Each()),
-        Metric("slave/mem_percent",      "slave.[].mem.percent",             Each(scale=100)),
-        Metric("slave/cpus_total",       "slave.[].cpus.total",              Each()),
-        Metric("slave/cpus_used",        "slave.[].cpus.used",               Each()),
-        Metric("slave/cpus_percent",     "slave.[].cpus.percent",            Each(scale=100)),
-        Metric("slave/disk_total",       "slave.[].disk.total",              Each()),
-        Metric("slave/disk_used",        "slave.[].disk.total",              Each()),
-        Metric("slave/tasks_running",    "slave.[].tasks.running",           Each()),
-        Metric("slave/tasks_staging",    "slave.[].tasks.staging",           Each()),
-        Metric("system/load_1min",       "slave.[].system.load.1min",        Each(scale=1000)),
-        Metric("system/load_5min",       "slave.[].system.load.5min",        Each(scale=1000)),
-        Metric("system/load_15min",      "slave.[].system.load.15min",       Each(scale=1000)),
-        Metric("system/mem_free_bytes",  "slave.[].system.mem.free.bytes",   Each()),
-        Metric("system/mem_total_bytes", "slave.[].system.mem.total.bytes",  Each()),
+        Metric("slave/mem_total",        "slave.[].mem.total"),
+        Metric("slave/mem_used",         "slave.[].mem.used"),
+        Metric("slave/mem_percent",      "slave.[].mem.percent", Each(scale=100)),
+        Metric("slave/cpus_total",       "slave.[].cpus.total"),
+        Metric("slave/cpus_used",        "slave.[].cpus.used"),
+        Metric("slave/cpus_percent",     "slave.[].cpus.percent", Each(scale=100)),
+        Metric("slave/disk_total",       "slave.[].disk.total"),
+        Metric("slave/disk_used",        "slave.[].disk.total"),
+        Metric("slave/tasks_running",    "slave.[].tasks.running"),
+        Metric("slave/tasks_staging",    "slave.[].tasks.staging"),
+        Metric("system/load_1min",       "slave.[].system.load.1min"),
+        Metric("system/load_5min",       "slave.[].system.load.5min"),
+        Metric("system/load_15min",      "slave.[].system.load.15min"),
+        Metric("system/mem_free_bytes",  "slave.[].system.mem.free.bytes"),
+        Metric("system/mem_total_bytes", "slave.[].system.mem.total.bytes"),
     ]
 
     for pid in mesos.slaves():
@@ -86,11 +86,11 @@ def slave_task_metrics(mesos):
         slave = mesos.slaves()[pid]
         prefix = "slave.[].executors.singularity.tasks.[]"
         metrics = [
-            Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs", Each()),
-            Metric("cpus_user_time_secs",   prefix + ".cpus.user_time_secs",   Each()),
-            Metric("cpus_limit",            prefix + ".cpus.limit",            Each()),
-            Metric("mem_limit_bytes",       prefix + ".mem.limit_bytes",       Each()),
-            Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes",         Each()),
+            Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs"),
+            Metric("cpus_user_time_secs",   prefix + ".cpus.user_time_secs"),
+            Metric("cpus_limit",            prefix + ".cpus.limit"),
+            Metric("mem_limit_bytes",       prefix + ".mem.limit_bytes"),
+            Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes"),
         ]
         for m in metrics:
             for t in slave["task_details"]:
@@ -104,23 +104,23 @@ def slave_task_metrics(mesos):
 
 def cluster_metrics(mesos):
     metrics = [
-        Metric("master/cpus_percent",     "cluster.cpus.percent",     Each(scale=100)),
-        Metric("master/cpus_total",       "cluster.cpus.total",       Each()),
-        Metric("master/cpus_used",        "cluster.cpus.used",        Each()),
-        Metric("master/mem_percent",      "cluster.mem.percent",      Each(scale=100)),
-        Metric("master/mem_total",        "cluster.mem.total",        Each()),
-        Metric("master/mem_used",         "cluster.mem.used",         Each()),
-        Metric("master/disk_percent",     "cluster.disk.percent",     Each(scale=100)),
-        Metric("master/disk_total",       "cluster.disk.total",       Each()),
-        Metric("master/disk_used",        "cluster.disk.used",        Each()),
-        Metric("master/slaves_connected", "cluster.slaves.connected", Each()),
-        Metric("master/tasks_failed",     "cluster.tasks.failed",     Each()),
-        Metric("master/tasks_finished",   "cluster.tasks.finished",   Each()),
-        Metric("master/tasks_killed",     "cluster.tasks.killed",     Each()),
-        Metric("master/tasks_lost",       "cluster.tasks.lost",       Each()),
-        Metric("master/tasks_running",    "cluster.tasks.running",    Each()),
-        Metric("master/tasks_staging",    "cluster.tasks.staging",    Each()),
-        Metric("master/tasks_starting",   "cluster.tasks.starting",   Each()),
+        Metric("master/cpus_percent",     "cluster.cpus.percent", Each(scale=100)),
+        Metric("master/cpus_total",       "cluster.cpus.total"),
+        Metric("master/cpus_used",        "cluster.cpus.used"),
+        Metric("master/mem_percent",      "cluster.mem.percent", Each(scale=100)),
+        Metric("master/mem_total",        "cluster.mem.total"),
+        Metric("master/mem_used",         "cluster.mem.used"),
+        Metric("master/disk_percent",     "cluster.disk.percent", Each(scale=100)),
+        Metric("master/disk_total",       "cluster.disk.total"),
+        Metric("master/disk_used",        "cluster.disk.used"),
+        Metric("master/slaves_connected", "cluster.slaves.connected"),
+        Metric("master/tasks_failed",     "cluster.tasks.failed"),
+        Metric("master/tasks_finished",   "cluster.tasks.finished"),
+        Metric("master/tasks_killed",     "cluster.tasks.killed"),
+        Metric("master/tasks_lost",       "cluster.tasks.lost"),
+        Metric("master/tasks_running",    "cluster.tasks.running"),
+        Metric("master/tasks_staging",    "cluster.tasks.staging"),
+        Metric("master/tasks_starting",   "cluster.tasks.starting"),
     ]
 
     for m in metrics:

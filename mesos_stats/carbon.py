@@ -50,9 +50,10 @@ class Carbon:
         try:
             self.ensure_connected(2003)
             def send(k, v):
-                print "SEND: %s = %s" % (k, v[0])
+                v = float(v)
+                print "SEND: %s = %s" % (k, v)
                 try:
-                    pkt = "%s %f %d\n" % (k, float(v[0]), ts)
+                    pkt = "%s %f %d\n" % (k, v, ts)
                     self.sock.send(pkt)
                 except TypeError:
                     print "Got %s; want float" % v
