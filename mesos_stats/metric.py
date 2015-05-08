@@ -9,6 +9,8 @@ class Metric:
         self.data = []
 
     def Add(self, datum, keys=[]): 
+        if datum == None:
+            return
         self.data.append((datum[self.path], keys))
 
     def DatapointName(self, keys):

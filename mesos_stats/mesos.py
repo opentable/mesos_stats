@@ -24,11 +24,14 @@ class Mesos:
             return None
         if master["pid"] == master["leader"]:
             self.leader_state = master
+            return self.leader_state
         else:
             self.leader_pid = master["leader"]
         return self.state()
 
     def get_cluster_stats(self):
+        if self.state() == None:
+            return None
         return try_get_json("http://%s/metrics/snapshot" % self.state()["leader"])
 
     def get_slave(self, slave_pid):
@@ -41,6 +44,8 @@ class Mesos:
         if self.slave_states != None:
             return self.slave_states
         self.slave_states = {}
+        if self.state() == None:
+            return []
         for slave in self.state()["slaves"]:
             slave_pid = slave["pid"]
             log("Getting stats for %s" % slave_pid)
