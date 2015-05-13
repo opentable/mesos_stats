@@ -24,6 +24,12 @@ mesos = Mesos(master_pid)
 # cabon is persistent, it manages connections and serialisation
 carbon = Carbon(carbon_host, graphite_prefix)
 
+print "Got configuration..."
+print "MESOS MASTER:    %s" % master_pid
+print "CARBON:          %s" % carbon_host
+print "GRAPHITE PREFIX: %s" % graphite_prefix
+print "=========================================="
+
 def main_loop():
     while True:
         try:
