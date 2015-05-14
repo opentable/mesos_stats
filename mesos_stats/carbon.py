@@ -1,4 +1,5 @@
 import socket
+import struct
 import time
 import os
 
@@ -9,6 +10,7 @@ class Carbon:
         self.port = None
         self.sock = None
         self.pickle = pickle
+        self.timeout = 30
 
     def connect(self, port):
         if self.sock != None:
@@ -21,17 +23,18 @@ class Carbon:
     def ensure_connected(self, port):
         if self.sock == None:
             self.connect(port)
-        elif self.port == port:
-            return
-        else:
+        elif self.port != port:
             self.close()
             self.sock.connect(port)
+        timeval = struct.pack('ll', self.timeout, 0)
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, timeval)
 
     def close(self):
         self.sock.close()
         self.sock = None
 
-    def send_metrics(self, metrics):
+    def send_metrics(self, metrics, timeout):
+        self.timeout = timeout
         ts = int(time.time())
         # Confusing control-flow...
         # If the send_metrics_pickle fails on socket.error, we

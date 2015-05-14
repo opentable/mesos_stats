@@ -31,6 +31,7 @@ print "GRAPHITE PREFIX: %s" % graphite_prefix
 print "=========================================="
 
 def main_loop():
+    should_exit = False
     while True:
         try:
             next_run = time.time() + period
@@ -42,9 +43,14 @@ def main_loop():
             if len(metrics) == 0:
                 log("No stats this time; sleeping")
             else:
-                carbon.send_metrics(metrics)
+                send_timeout = next_run - time.time() - 1
+                log("Sending stats (timeout %ss)" % send_timeout)
+                carbon.send_metrics(metrics, send_timeout)
         except KeyboardInterrupt, SystemExit:
-            raise
+            print "Bye!"
+            should_exit = True
+            sys.exit(0)
+            break
         except Exception as e:
             traceback.print_exc()
             log("Unhandled exception: %s" % e)
@@ -57,6 +63,8 @@ def main_loop():
         else:
             log("Metrics sent successfully.")
         finally:
+            if should_exit:
+                return
             sleep = next_run - time.time()
             if sleep < 0:
                 log("ERROR: Metrics collection took longer than %ds" % period)
