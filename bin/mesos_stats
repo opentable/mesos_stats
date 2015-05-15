@@ -5,16 +5,21 @@ import traceback
 from mesos_stats.util import log
 from mesos_stats.mesos import Mesos, slave_metrics, slave_task_metrics, cluster_metrics
 from mesos_stats.carbon import Carbon
+from mesos_stats.singularity import Singularity, singularity_metrics
 
 if len(sys.argv) < 4:
-    log("Usage: %s <mesos master host> <carbon host> <graphite prefix> [period seconds=60]" % sys.argv[0])
+    log("Usage: %s <mesos master host> <carbon host> <graphite prefix> [singularity_host] [period seconds=60]" % sys.argv[0])
     sys.exit(1)
 
 master_host = sys.argv[1]
 carbon_host = sys.argv[2]
 graphite_prefix = sys.argv[3]
 try:
-    period = float(sys.argv[4])
+    singularity_host = sys.argv[4]
+except:
+    singularity_host = None
+try:
+    period = float(sys.argv[5])
 except:
     period = 60
 
@@ -23,11 +28,16 @@ master_pid = master_host + ":5050"
 mesos = Mesos(master_pid)
 # cabon is persistent, it manages connections and serialisation
 carbon = Carbon(carbon_host, graphite_prefix)
+singularity = None
+
+if singularity_host != None:
+    singularity = Singularity(singularity_host)
 
 print "Got configuration..."
-print "MESOS MASTER:    %s" % master_pid
-print "CARBON:          %s" % carbon_host
-print "GRAPHITE PREFIX: %s" % graphite_prefix
+print "MESOS MASTER:     %s" % master_pid
+print "CARBON:           %s" % carbon_host
+print "GRAPHITE PREFIX:  %s" % graphite_prefix
+print "SINGULARITY HOST: %s" % singularity_host
 print "=========================================="
 
 def main_loop():
@@ -40,6 +50,9 @@ def main_loop():
             slave_tasks = slave_task_metrics(mesos)
             cluster = cluster_metrics(mesos)
             metrics = slave + slave_tasks + cluster
+            if singularity != None:
+                singularity.reset()
+                metrics += singularity_metrics(singularity)
             if len(metrics) == 0:
                 log("No stats this time; sleeping")
             else:
