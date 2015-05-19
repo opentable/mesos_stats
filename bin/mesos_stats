@@ -46,13 +46,15 @@ def main_loop():
         try:
             if next_run < time.time():
                 log("ERROR: collection and sending took more than 1 minute, one datapoint skipped")
-            timestamp = time.time()
-            now = datetime.fromtimestamp(timestamp)
+            iter_start = time.time()
+            now = datetime.fromtimestamp(iter_start)
             sleep_time = 60.0 - ((now.microsecond/1000000.0) + now.second)
             log("Sleeping for %ss" % sleep_time)
             time.sleep(sleep_time)
-            log("Timestamp: %s (%s)" % (datetime.now(), time.time()))
-            next_run = time.time() + 60
+            timestamp = time.time()
+            now = datetime.fromtimestamp(timestamp)
+            log("Timestamp: %s (%s)" % (now, timestamp))
+            next_run = timestamp + 60.0
             mesos.reset()
             slave = slave_metrics(mesos)
             slave_tasks = slave_task_metrics(mesos)
