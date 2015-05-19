@@ -33,9 +33,9 @@ class Carbon:
         self.sock.close()
         self.sock = None
 
-    def send_metrics(self, metrics, timeout):
+    def send_metrics(self, metrics, timeout, timestamp):
         self.timeout = timeout
-        ts = int(time.time())
+        ts = int(timestamp)
         # Confusing control-flow...
         # If the send_metrics_pickle fails on socket.error, we
         # simply pass through to the send_metrics_plaintext.
