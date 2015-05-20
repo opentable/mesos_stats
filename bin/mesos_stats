@@ -39,36 +39,53 @@ print "GRAPHITE PREFIX:  %s" % graphite_prefix
 print "SINGULARITY HOST: %s" % singularity_host
 print "=========================================="
 
+def wait_until_beginning_of_clock_minute():
+    iter_start = time.time()
+    now = datetime.fromtimestamp(iter_start)
+    sleep_time = 60.0 - ((now.microsecond/1000000.0) + now.second)
+    log("Sleeping for %ss" % sleep_time)
+    time.sleep(sleep_time)
+
+class timer:
+    def __init__(self, name):
+        self.name = name
+    def __enter__(self):
+        self.time = time.time()
+    def __exit__(self, type, value, traceback):
+        return log("%s took %ss" % (self.name, time.time() - self.time))
+
 def main_loop():
     should_exit = False
-    next_run = time.time() + 120
+    # self-monitoring
+    last_cycle_time = 0
+    last_collection_time = 0
+    last_send_time = 0
     while True:
         try:
-            if next_run < time.time():
-                log("ERROR: collection and sending took more than 1 minute, one datapoint skipped")
-            iter_start = time.time()
-            now = datetime.fromtimestamp(iter_start)
-            sleep_time = 60.0 - ((now.microsecond/1000000.0) + now.second)
-            log("Sleeping for %ss" % sleep_time)
-            time.sleep(sleep_time)
-            timestamp = time.time()
-            now = datetime.fromtimestamp(timestamp)
-            log("Timestamp: %s (%s)" % (now, timestamp))
-            next_run = timestamp + 60.0
-            mesos.reset()
-            slave = slave_metrics(mesos)
-            slave_tasks = slave_task_metrics(mesos)
-            cluster = cluster_metrics(mesos)
-            metrics = slave + slave_tasks + cluster
-            if singularity != None:
-                singularity.reset()
-                metrics += singularity_metrics(singularity)
-            if len(metrics) == 0:
-                log("No stats this time; sleeping")
-            else:
-                send_timeout = next_run - time.time() - 1
-                log("Sending stats (timeout %ss)" % send_timeout)
-                carbon.send_metrics(metrics, send_timeout, timestamp)
+            wait_until_beginning_of_clock_minute()
+            with timer("Entire collect and send cycle"):
+                timestamp = time.time()
+                now = datetime.fromtimestamp(timestamp)
+                log("Timestamp: %s (%s)" % (now, timestamp))
+                cycle_timeout = timestamp + 59.0
+                metrics = []
+                if mesos != None:
+                    with timer("Mesos metrics collection"):
+                        mesos.reset()
+                        metrics += slave_metrics(mesos)
+                        metrics += slave_task_metrics(mesos)
+                        metrics += cluster_metrics(mesos)
+                if singularity != None:
+                    with timer("Singularity metrics collection"):
+                        singularity.reset()
+                        metrics += singularity_metrics(singularity)
+                if len(metrics) == 0:
+                    log("No stats this time; sleeping")
+                else:
+                    send_timeout = cycle_timeout - time.time()
+                    log("Sending stats (timeout %ss)" % send_timeout)
+                    with timer("Sending stats to graphite"):
+                        carbon.send_metrics(metrics, send_timeout, timestamp)
         except KeyboardInterrupt, SystemExit:
             print "Bye!"
             should_exit = True
