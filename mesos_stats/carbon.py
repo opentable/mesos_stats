@@ -53,12 +53,18 @@ class Carbon:
     def send_metrics_plaintext(self, metrics, ts):
         try:
             self.ensure_connected(2003)
-            def send(k, v):
-                v = float(v)
-                #print "SEND: %s = %s" % (k, v)
-                pkt = "%s %f %d\n" % (k, v, ts)
-                self.sock.send(pkt)
-            self.forEachPrefixedMetric(metrics, send)
+            self.all_stats = ""
+            def append(k, v):
+                line = "%s %f %d\n" % (k, v, ts)
+                self.all_stats += line
+            self.forEachPrefixedMetric(metrics, append)
+            totalsent = 0
+            l = len(self.all_stats)
+            while totalsent < l:
+                sent = self.sock.send(self.all_stats[totalsent:])
+                if sent == 0:
+                    raise RuntimeError("socket connection broken")
+                totalsent += sent
         finally:
             self.close()
 
