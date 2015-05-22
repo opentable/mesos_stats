@@ -2,6 +2,7 @@ import socket
 import struct
 import time
 import os
+from mesos_stats.util import log
 
 class Carbon:
     def __init__(self, host, prefix, pickle=False):
@@ -60,11 +61,16 @@ class Carbon:
             self.forEachPrefixedMetric(metrics, append)
             totalsent = 0
             l = len(self.all_stats)
+            iterations = 0
             while totalsent < l:
+                iterations += 1
                 sent = self.sock.send(self.all_stats[totalsent:])
                 if sent == 0:
                     raise RuntimeError("socket connection broken")
                 totalsent += sent
+            if iterations != 1:
+                log("INFO: Send took %s iterations" % iterations)
+            log("%s out of %s (%s%s) characters sent successfully in %s iteration(s)." % (totalsent, l, (l/totalsent)*100, "%", iterations))
         finally:
             self.close()
 
