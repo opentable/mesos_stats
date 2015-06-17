@@ -1,8 +1,10 @@
 from metric import Metric, Each
 from util import log, try_get_json
+import sys
 
 class Mesos:
     def __init__(self, master_pid):
+        self.original_master_pid = master_pid
         self.leader_pid = master_pid
         self.leader_state = None
         self.slave_states = None
@@ -19,7 +21,15 @@ class Mesos:
     def state(self):
         if self.leader_state != None:
             return self.leader_state
-        master = self.get_master_state()
+        try:
+            master = self.get_master_state()
+        except:
+            if self.leader_pid == self.original_master_pid:
+                log("Already using originally configured mesos master pid.")
+                raise MesosStatsException("Unable to locate any Mesos master at %s" % self.original_master_pid)
+            log("Unable to hit last known leader, falling back to configured master: %s" % self.original_master_pid)
+            self.leader_pid = self.original_master_pid
+            return self.state()
         if master == None:
             return None
         if master["pid"] == master["leader"]:
@@ -58,6 +68,9 @@ class Mesos:
             self.slave_states[slave_pid]["task_details"] = tasks
 
         return self.slave_states
+
+class MesosStatsException(Exception):
+    pass
 
 def slave_metrics(mesos):
     metrics = [

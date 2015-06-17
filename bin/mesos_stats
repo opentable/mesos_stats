@@ -3,8 +3,8 @@ import sys
 import time
 from datetime import datetime
 import traceback
-from mesos_stats.util import log
-from mesos_stats.mesos import Mesos, slave_metrics, slave_task_metrics, cluster_metrics
+from mesos_stats.util import log, timer
+from mesos_stats.mesos import Mesos, MesosStatsException, slave_metrics, slave_task_metrics, cluster_metrics
 from mesos_stats.carbon import Carbon
 from mesos_stats.singularity import Singularity, singularity_metrics
 
@@ -38,6 +38,8 @@ print "CARBON:           %s" % carbon_host
 print "GRAPHITE PREFIX:  %s" % graphite_prefix
 print "SINGULARITY HOST: %s" % singularity_host
 print "=========================================="
+start_time = time.time()
+print "Start time: %s" % datetime.fromtimestamp(start_time)
 
 def wait_until_beginning_of_clock_minute():
     iter_start = time.time()
@@ -45,14 +47,6 @@ def wait_until_beginning_of_clock_minute():
     sleep_time = 60.0 - ((now.microsecond/1000000.0) + now.second)
     log("Sleeping for %ss" % sleep_time)
     time.sleep(sleep_time)
-
-class timer:
-    def __init__(self, name):
-        self.name = name
-    def __enter__(self):
-        self.time = time.time()
-    def __exit__(self, type, value, traceback):
-        return log("%s took %ss" % (self.name, time.time() - self.time))
 
 def main_loop():
     should_exit = False
@@ -86,6 +80,8 @@ def main_loop():
                     log("Sending stats (timeout %ss)" % send_timeout)
                     with timer("Sending stats to graphite"):
                         carbon.send_metrics(metrics, send_timeout, timestamp)
+        except MesosStatsException as e:
+            log("%s" % e)
         except KeyboardInterrupt, SystemExit:
             print "Bye!"
             should_exit = True
