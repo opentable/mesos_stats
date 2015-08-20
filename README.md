@@ -1,21 +1,25 @@
 # Mesos Stats
-
-Scripts to collect mesos cluster stats.
-
-## Installation:
-```shell
-# Clone this repo, cd into the directory, and do:
-shell> pip install . 
-```
+Scripts to collect Mesos and Singularity cluster stats.
 
 ## Usage:
-```shell
-shell> mesos_stats <MASTER_HOST> <GRAPHITE_HOST> <GRAPHITE_PREFIX> [<SLEEP_SECONDS=60>]
+Build and tag the docker image. E.g.
+
+```
+shell> docker build -t mesos_stats .
+```
+
+Create a Dockerfile inheriting from that image, and add some configuration, e.g.
+```
+FROM mesos_stats
+ENTRYPOINT ["mesos_stats", "<MASTER>", "<CARBON_HOST>", "<GRAPHITE_PREFIX>", "<SINGULARITY_HOSTNAME>"]
 ```
 
 Where:
 - `<MASTER>` is the host of any mesos master in the cluster.
-- `<GRAPHITE_HOST>` is the host for your carbon instance, e.g. `carbon.host.com`
+- `<CARBON_HOST>` is the host for your carbon instance, e.g. `carbon.host.com`
 - `<GRAPHITE_PREFIX>` is a prefix for the stats, e.g. `mesos.production.eu`
-- `<SLEEP_SECONDS>` is the number of seconds to sleep between gathering date (default 60)
+- `<SINGULARITY_HOSTNAME>` is the hostname of your Singularity web interface (optional)
+
+
+Then launch it on your cluster! The singularity host is optional, but adds extra stats.
 
