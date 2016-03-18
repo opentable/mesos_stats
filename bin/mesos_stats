@@ -1,4 +1,5 @@
 #!/usr/bin/env python -u
+import os
 import sys
 import time
 from datetime import datetime
@@ -8,15 +9,18 @@ from mesos_stats.mesos import Mesos, MesosStatsException, slave_metrics, slave_t
 from mesos_stats.carbon import Carbon
 from mesos_stats.singularity import Singularity, singularity_metrics
 
-if len(sys.argv) < 4:
-    log("Usage: %s <mesos master host> <carbon host> <graphite prefix> [singularity_host]" % sys.argv[0])
-    sys.exit(1)
 
-master_host = sys.argv[1]
-carbon_host = sys.argv[2]
-graphite_prefix = sys.argv[3]
+
+# if len(sys.argv) < 4:
+#     log("Usage: %s <mesos master host> <carbon host> <graphite prefix> [singularity_host]" % sys.argv[0])
+#     sys.exit(1)
+
+master_host = os.environ['MESOS_MASTER']
+carbon_host = os.environ['CARBON_HOST']
+graphite_prefix = os.environ['GRAPHITE_PREFIX']
+
 try:
-    singularity_host = sys.argv[4]
+    singularity_host = os.environ['SINGULARITY_HOST']
 except:
     singularity_host = None
 
@@ -107,4 +111,3 @@ try:
 except KeyboardInterrupt, SystemExit:
     print "Bye!"
     sys.exit(0)
-
