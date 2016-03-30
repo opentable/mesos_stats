@@ -6,7 +6,7 @@ def try_get_json(url):
     with timer("GET %s" % url):     
         t = time.time()
         try:
-            return json.loads(requests.get(url, timeout=5).text)
+            return json.loads(requests.get(url, timeout=15).text)
         except requests.exceptions.Timeout:
             log("GET %s timed out after %s." % (url, time.time()-t))
             raise
