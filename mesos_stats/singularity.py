@@ -16,9 +16,6 @@ class Singularity:
     def pending_deploys(self):
         return self.__get("/deploys/pending")
 
-    def failed_tasks(self, requestId):
-        return self.__get("/history/request/%s/tasks" % requestId)
-
     # scheduled_tasks should nod be confused with the common concept of scheduled
     # tasks. This indicates any task which is scheduled to be run, including tasks
     # which have been invoked to run immediately, and long-running services
@@ -53,17 +50,6 @@ def singularity_metrics(singularity):
     # Alternative method to determine overdue tasks: look at scheduled start time
     # and set to overdue if it is in the past. This is how the Singularity UI
     # calculates it.
-    task_failed_count = {}
-
-    for t in singularity.active_requests():
-        failed_tasks = singularity.failed_tasks(t['request']['id'])
-        for h in failed_tasks:
-            if h['lastTaskState'] == 'TASK_FAILED' and h['updatedAt'] > int(round((time.time() - 1500)* 1000)) and h['updatedAt'] < int(round((time.time())* 1000)):
-                if task_failed_count.has_key(h['taskId']['requestId']):
-                    task_failed_count[h['taskId']['requestId']] += 1
-                else:
-                    task_failed_count[h['taskId']['requestId']] = 1
-
     scheduled_tasks = singularity.scheduled_tasks()
     overdue_tasks = [t for t in scheduled_tasks if
             int(t["pendingTask"]["pendingTaskId"]["nextRunAt"]) <
@@ -74,8 +60,4 @@ def singularity_metrics(singularity):
         DigestedMetric("singularity.deploys.pending.total", len(pending_deploys)),
         DigestedMetric("singularity.deploys.pending.overdue", len(overdue_deploys)),
     ]
-
-    for requestId, count in task_failed_count.iteritems():
-         digested_metrics.append(DigestedMetric("singularity.tasks.history.failure.%s"  % requestId, count))
-
     return digested_metrics
