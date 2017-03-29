@@ -19,7 +19,7 @@ def try_get_json(url):
    
 def log(message):
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-    print '%s %s' % (ts, message)
+    print('%s %s' % (ts, message))
 
 class timer:
     def __init__(self, name):

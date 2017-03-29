@@ -1,5 +1,5 @@
-from metric import Metric, Each
-from util import log, try_get_json
+from .metric import Metric, Each
+from .util import log, try_get_json
 import sys
 
 class Mesos:

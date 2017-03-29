@@ -5,12 +5,13 @@ import os
 from mesos_stats.util import log
 
 class Carbon:
-    def __init__(self, host, prefix, pickle=False):
+    def __init__(self, host, prefix, pickle=False, dry_run=False):
         self.host = host
         self.prefix = prefix
         self.port = None
         self.sock = None
         self.pickle = pickle
+        self.dry_run = dry_run
         self.timeout = 30
 
     def connect(self, port):
@@ -35,6 +36,8 @@ class Carbon:
         self.sock = None
 
     def send_metrics(self, metrics, timeout, timestamp):
+        if self.dry_run: # Don't do anything in test mode
+            return
         self.timeout = timeout
         ts = int(timestamp)
         # Confusing control-flow...

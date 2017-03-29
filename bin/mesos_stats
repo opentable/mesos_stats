@@ -2,48 +2,50 @@
 import os
 import sys
 import time
-from datetime import datetime
 import traceback
+from datetime import datetime
+
 from mesos_stats.util import log, timer
-from mesos_stats.mesos import Mesos, MesosStatsException, slave_metrics, slave_task_metrics, cluster_metrics
+from mesos_stats.mesos import (
+    cluster_metrics,
+    Mesos,
+    MesosStatsException,
+    slave_metrics,
+    slave_task_metrics,
+)
 from mesos_stats.carbon import Carbon
 from mesos_stats.singularity import Singularity, singularity_metrics
 
+DRY_RUN = True # Enable test mode. No stats sent to Graphite
 
+def init_env():
+    master_host = os.environ['MESOS_MASTER']
+    carbon_host = os.environ['CARBON_HOST']
+    graphite_prefix = os.environ['GRAPHITE_PREFIX']
+    singularity_host = os.environ.get('SINGULARITY_HOST', None)
+    dry_run = os.environ.get('DRY_RUN', DRY_RUN)
+    master_pid = "%s:5050" % master_host
 
-# if len(sys.argv) < 4:
-#     log("Usage: %s <mesos master host> <carbon host> <graphite prefix> [singularity_host]" % sys.argv[0])
-#     sys.exit(1)
+    if not all([master_host, carbon_host, graphite_prefix]):
+        print('One or more configuration env not set')
+        print_config()
+        sys.exit(0)
 
-master_host = os.environ['MESOS_MASTER']
-carbon_host = os.environ['CARBON_HOST']
-graphite_prefix = os.environ['GRAPHITE_PREFIX']
+    print("Got configuration...")
+    print("MESOS MASTER:     %s" % master_pid)
+    print("CARBON:           %s" % carbon_host)
+    print("GRAPHITE PREFIX:  %s" % graphite_prefix)
+    print("SINGULARITY HOST: %s" % singularity_host)
+    print("DRY RUN (TEST MODE): %s" % dry_run)
+    print("==========================================")
 
-try:
-    singularity_host = os.environ['SINGULARITY_HOST']
-except:
-    singularity_host = None
+    mesos = Mesos(master_pid)
+    carbon = Carbon(carbon_host, graphite_prefix, dry_run=dry_run)
 
-period = 60
+    if singularity_host:
+        singularity = Singularity(singularity_host)
 
-master_pid = master_host + ":5050"
-# mesos is persistent, it keeps track of moving leaders
-mesos = Mesos(master_pid)
-# cabon is persistent, it manages connections and serialisation
-carbon = Carbon(carbon_host, graphite_prefix)
-singularity = None
-
-if singularity_host != None:
-    singularity = Singularity(singularity_host)
-
-print "Got configuration..."
-print "MESOS MASTER:     %s" % master_pid
-print "CARBON:           %s" % carbon_host
-print "GRAPHITE PREFIX:  %s" % graphite_prefix
-print "SINGULARITY HOST: %s" % singularity_host
-print "=========================================="
-start_time = time.time()
-print "Start time: %s" % datetime.fromtimestamp(start_time)
+    return (mesos, carbon, singularity)
 
 def wait_until_beginning_of_clock_minute():
     iter_start = time.time()
@@ -52,12 +54,13 @@ def wait_until_beginning_of_clock_minute():
     log("Sleeping for %ss" % sleep_time)
     time.sleep(sleep_time)
 
-def main_loop():
+def main_loop(mesos, carbon, singularity):
     should_exit = False
     # self-monitoring
     last_cycle_time = 0
     last_collection_time = 0
     last_send_time = 0
+    assert all([mesos, carbon]) # Mesos and Carbon is mandatory
     while True:
         try:
             wait_until_beginning_of_clock_minute()
@@ -67,17 +70,17 @@ def main_loop():
                 log("Timestamp: %s (%s)" % (now, timestamp))
                 cycle_timeout = timestamp + 59.0
                 metrics = []
-                if mesos != None:
+                if mesos:
                     with timer("Mesos metrics collection"):
                         mesos.reset()
                         metrics += slave_metrics(mesos)
                         metrics += slave_task_metrics(mesos)
                         metrics += cluster_metrics(mesos)
-                if singularity != None:
+                if singularity:
                     with timer("Singularity metrics collection"):
                         singularity.reset()
                         metrics += singularity_metrics(singularity)
-                if len(metrics) == 0:
+                if not metrics:
                     log("No stats this time; sleeping")
                 else:
                     send_timeout = cycle_timeout - time.time()
@@ -86,8 +89,8 @@ def main_loop():
                         carbon.send_metrics(metrics, send_timeout, timestamp)
         except MesosStatsException as e:
             log("%s" % e)
-        except KeyboardInterrupt, SystemExit:
-            print "Bye!"
+        except (KeyboardInterrupt, SystemExit):
+            print("Bye!")
             should_exit = True
             sys.exit(0)
             break
@@ -106,8 +109,12 @@ def main_loop():
             if should_exit:
                 return
 
-try:
-    main_loop()
-except KeyboardInterrupt, SystemExit:
-    print "Bye!"
-    sys.exit(0)
+if __name__ == '__main__':
+    (mesos, carbon, singularity) = init_env()
+    start_time = time.time()
+    print("Start time: %s" % datetime.fromtimestamp(start_time))
+    try:
+        main_loop(mesos, carbon, singularity)
+    except (KeyboardInterrupt, SystemExit):
+        print("Bye!")
+        sys.exit(0)
