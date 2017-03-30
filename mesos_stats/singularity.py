@@ -1,5 +1,5 @@
-from metric import Metric, Each
-from util import log, try_get_json
+from .metric import Metric, Each
+from .util import log, try_get_json
 import time
 
 class Singularity:
@@ -59,7 +59,7 @@ def singularity_metrics(singularity):
         failed_tasks = singularity.failed_tasks(t['request']['id'])
         for h in failed_tasks:
             if h['lastTaskState'] == 'TASK_FAILED' and h['updatedAt'] > int(round((time.time() - 1500)* 1000)) and h['updatedAt'] < int(round((time.time())* 1000)):
-                if task_failed_count.has_key(h['taskId']['requestId']):
+                if h['taskId']['requestId'] in task_failed_count:
                     task_failed_count[h['taskId']['requestId']] += 1
                 else:
                     task_failed_count[h['taskId']['requestId']] = 1
@@ -75,7 +75,7 @@ def singularity_metrics(singularity):
         DigestedMetric("singularity.deploys.pending.overdue", len(overdue_deploys)),
     ]
 
-    for requestId, count in task_failed_count.iteritems():
+    for requestId, count in task_failed_count.items():
          digested_metrics.append(DigestedMetric("singularity.tasks.history.failure.%s"  % requestId, count))
 
     return digested_metrics
