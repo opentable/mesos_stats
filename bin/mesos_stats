@@ -16,7 +16,7 @@ from mesos_stats.mesos import (
 from mesos_stats.carbon import Carbon
 from mesos_stats.singularity import Singularity, singularity_metrics
 
-DRY_RUN = True # Enable test mode. No stats sent to Graphite
+DRY_RUN = False # Enable test mode. No stats sent to Graphite
 
 def init_env():
     master_host = os.environ['MESOS_MASTER']
