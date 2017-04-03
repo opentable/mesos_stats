@@ -5,7 +5,7 @@ import time
 import traceback
 from datetime import datetime
 
-from mesos_stats.util import log, timer
+from mesos_stats.util import log, Timer
 from mesos_stats.mesos import (
     cluster_metrics,
     Mesos,
@@ -64,20 +64,20 @@ def main_loop(mesos, carbon, singularity):
     while True:
         try:
             wait_until_beginning_of_clock_minute()
-            with timer("Entire collect and send cycle"):
+            with Timer("Entire collect and send cycle"):
                 timestamp = time.time()
                 now = datetime.fromtimestamp(timestamp)
                 log("Timestamp: %s (%s)" % (now, timestamp))
                 cycle_timeout = timestamp + 59.0
                 metrics = []
                 if mesos:
-                    with timer("Mesos metrics collection"):
+                    with Timer("Mesos metrics collection"):
                         mesos.reset()
                         metrics += slave_metrics(mesos)
                         metrics += slave_task_metrics(mesos)
                         metrics += cluster_metrics(mesos)
                 if singularity:
-                    with timer("Singularity metrics collection"):
+                    with Timer("Singularity metrics collection"):
                         singularity.reset()
                         metrics += singularity_metrics(singularity)
                 if not metrics:
@@ -85,7 +85,7 @@ def main_loop(mesos, carbon, singularity):
                 else:
                     send_timeout = cycle_timeout - time.time()
                     log("Sending stats (timeout %ss)" % send_timeout)
-                    with timer("Sending stats to graphite"):
+                    with Timer("Sending stats to graphite"):
                         carbon.send_metrics(metrics, send_timeout, timestamp)
         except MesosStatsException as e:
             log("%s" % e)
