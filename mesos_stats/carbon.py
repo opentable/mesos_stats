@@ -37,6 +37,9 @@ class Carbon:
 
     def send_metrics(self, metrics, timeout, timestamp):
         if self.dry_run: # Don't do anything in test mode
+            for m in metrics:
+                for r in m.Results():
+                    print(r)
             return
         self.timeout = timeout
         ts = int(timestamp)
@@ -51,7 +54,7 @@ class Carbon:
                 return
             except socket.error:
                 pass
-        
+
         self.send_metrics_plaintext(metrics, ts)
 
     def send_metrics_plaintext(self, metrics, ts):

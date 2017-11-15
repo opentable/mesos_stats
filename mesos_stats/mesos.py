@@ -1,6 +1,7 @@
+import sys
+import re
 from .metric import Metric, Each
 from .util import log, try_get_json
-import sys
 
 class Mesos:
     def __init__(self, master_pid):
@@ -17,7 +18,7 @@ class Mesos:
         url = "http://%s/state.json" % self.leader_pid
         log("Getting master state from: %s" % url)
         return try_get_json(url)
-    
+
     def state(self):
         if self.leader_state != None:
             return self.leader_state
@@ -49,7 +50,7 @@ class Mesos:
 
     def get_slave_statistics(self, slave_pid):
         return try_get_json("http://%s/monitor/statistics.json" % slave_pid)
-    
+
     def slaves(self):
         if self.slave_states != None:
             return self.slave_states
@@ -99,6 +100,8 @@ def slave_metrics(mesos):
     return metrics
 
 def slave_task_metrics(mesos):
+    pattern = r'(?P<task_name>\S+)-teamcity\S+-(?P<instance_no>\d{1,2})-mesos_slave\S+'
+    regex = re.compile(pattern)
     ms = []
     for pid in mesos.slaves():
         slave = mesos.slaves()[pid]
@@ -112,10 +115,29 @@ def slave_task_metrics(mesos):
         ]
         for m in metrics:
             for t in slave["task_details"]:
-                # TODO:m.Add(t, "key1", "key2", ...)
                 m.Add(t["statistics"], [pid, t["executor_id"]])
-
         ms += metrics
+
+        # Create a metrics schema that is independent of slave IDs and Teamcity
+        # version numbers.
+        # e.g. mesos_stats.(env).tasks.(task_name)-(instance).mem.limit_bytes
+        tc_prefix = "tasks.[]"
+        tc_metrics = [
+            Metric("cpus_system_time_secs", tc_prefix + ".cpus.system_time_secs"),
+            Metric("cpus_user_time_secs", tc_prefix + ".cpus.user_time_secs"),
+            Metric("cpus_limit", tc_prefix + ".cpus.limit"),
+            Metric("mem_limit_bytes", tc_prefix + ".mem.limit_bytes"),
+            Metric("mem_rss_bytes", tc_prefix + ".mem.rss_bytes"),
+        ]
+        for m in tc_metrics:
+            for t in slave["task_details"]:
+                match = regex.search(t["executor_id"])
+                if match: # Ignore non-teamcity tasks for now
+                    r = match.groupdict()
+                    task_name = "{}_{}".format(r['task_name'],
+                                               r['instance_no'])
+                    m.Add(t["statistics"], [task_name,])
+        ms += tc_metrics
 
     return ms
 
@@ -145,6 +167,4 @@ def cluster_metrics(mesos):
         m.Add(mesos.get_cluster_stats())
 
     return metrics
-   
 
-    
