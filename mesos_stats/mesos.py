@@ -134,12 +134,22 @@ def slave_metrics(mesos):
     return metrics
 
 
-def slave_task_metrics(mesos):
-    pattern = r'(?P<task_name>\S+)-teamcity\S+-(?P<instance_no>\d{1,2})-mesos_slave\S+'
-    regex = re.compile(pattern)
+def slave_task_metrics(mesos, requests_json):
+    # We rely on 2 ways to get the request ID to use in the Graphite schema
+    # The first way relies no regex which covers 99% of the cases
+    regex = re.compile(r'(?P<task_name>\S+)-'
+                       'teamcity\S+-(?P<instance_no>\d{1,2})'
+                       '-mesos_slave\S+'
+    )
+    # The second way just compares the task name to see if it has any of the
+    # request names as a prefix
+    requests = [r['request']['id'] for r in requests_json]
+
     ms = []
     for pid in mesos.slaves():
         slave = mesos.slaves()[pid]
+        # This is the old schema to retain for backwards compatibility
+        # The full task names are used
         prefix = "slave.[].executors.singularity.tasks.[]"
         metrics = [
             Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs"),
@@ -153,6 +163,7 @@ def slave_task_metrics(mesos):
                 m.Add(t["statistics"], [pid, t["executor_id"]])
         ms += metrics
 
+        # This is the new schema
         # Create a metrics schema that is independent of slave IDs and Teamcity
         # version numbers.
         # e.g. mesos_stats.(env).tasks.(task_name)-(instance).mem.limit_bytes
@@ -167,11 +178,20 @@ def slave_task_metrics(mesos):
         for m in tc_metrics:
             for t in slave["task_details"]:
                 match = regex.search(t["executor_id"])
-                if match: # Ignore non-teamcity tasks for now
+                if match:
                     r = match.groupdict()
-                    task_name = "{}_{}".format(r['task_name'],
-                                               r['instance_no'])
-                    m.Add(t["statistics"], [task_name,])
+                    task_name = r['task_name']
+                    instance_no = r['instance_no']
+                else:
+                    # Try and match the task name with one of the requests
+                    # We'll then use the request name as the task name
+                    for r in requests:
+                        if t['executor_id'].startswith(r):
+                            task_name = r
+                            break
+                    instance_no = t['executor_id'].split('-mesos-slave', 1)[0][-1]
+                task_name = "{}_{}".format(task_name, instance_no)
+                m.Add(t["statistics"], [task_name,])
         ms += tc_metrics
 
     return ms
