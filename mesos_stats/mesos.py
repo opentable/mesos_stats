@@ -2,6 +2,12 @@ import sys
 import re
 from .metric import Metric, Each
 from .util import log, try_get_json
+import functools
+from multiprocessing import Pool
+from .metric import Metric, Each
+from .util import log, try_get_json
+
+POOL_SIZE = 20 # Number of parallel processes to query Mesos
 
 class Mesos:
     def __init__(self, master_pid):
@@ -10,9 +16,20 @@ class Mesos:
         self.leader_state = None
         self.slave_states = None
 
+
+    def show_cache_info(self):
+        log("get_slave cache : {}".format(self.get_slave.cache_info()))
+        log("get_slave_stats cache : {}".format(self.get_slave.cache_info()))
+        log("get_cluster_stats cache : {}".format(self.get_slave.cache_info()))
+
+
     def reset(self):
+        self.show_cache_info()
         self.leader_state = None
         self.slave_states = None
+        self.get_slave.cache_clear()
+        self.get_slave_statistics.cache_clear()
+
 
     def get_master_state(self):
         url = "http://%s/state.json" % self.leader_pid
@@ -27,8 +44,10 @@ class Mesos:
         except:
             if self.leader_pid == self.original_master_pid:
                 log("Already using originally configured mesos master pid.")
-                raise MesosStatsException("Unable to locate any Mesos master at %s" % self.original_master_pid)
-            log("Unable to hit last known leader, falling back to configured master: %s" % self.original_master_pid)
+                raise MesosStatsException("Unable to locate any Mesos master \
+                                    at {}".format(self.original_master_pid))
+            log("Unable to hit last known leader, falling back to configured \
+                master: {}".format(self.original_master_pid))
             self.leader_pid = self.original_master_pid
             return self.state()
         if master == None:
@@ -40,16 +59,34 @@ class Mesos:
             self.leader_pid = master["leader"]
         return self.state()
 
+
+    @functools.lru_cache(maxsize=None)
     def get_cluster_stats(self):
         if self.state() == None:
             return None
-        return try_get_json("http://%s/metrics/snapshot" % self.state()["leader"])
+        return try_get_json("http://%s/metrics/snapshot" \
+                            % self.state()["leader"])
 
+    @functools.lru_cache(maxsize=None)
     def get_slave(self, slave_pid):
         return try_get_json("http://%s/metrics/snapshot" % slave_pid)
 
+
+    @functools.lru_cache(maxsize=None)
     def get_slave_statistics(self, slave_pid):
         return try_get_json("http://%s/monitor/statistics.json" % slave_pid)
+
+
+    def _update_slave_state(self, slave_state):
+        if slave_state == None:
+            log("Slave lost: %s" % slave_pid)
+            return
+        slave_pid = slave_state['pid']
+        log("Getting stats for %s" % slave_pid)
+        slave_state = self.get_slave(slave_pid)
+        tasks = self.get_slave_statistics(slave_pid)
+        return(slave_pid, slave_state, tasks)
+
 
     def slaves(self):
         if self.slave_states != None:
@@ -57,30 +94,29 @@ class Mesos:
         self.slave_states = {}
         if self.state() == None:
             return []
-        for slave in self.state()["slaves"]:
-            slave_pid = slave["pid"]
-            log("Getting stats for %s" % slave_pid)
-            slave_state = self.get_slave(slave_pid)
-            if slave == None:
-                log("Slave lost: %s" % slave_pid)
-                continue
-            tasks = self.get_slave_statistics(slave_pid)
+        with Pool(processes=POOL_SIZE) as pool:
+            result = pool.map(self._update_slave_state, self.state()["slaves"])
+        for (slave_pid, slave_state, tasks) in result:
             self.slave_states[slave_pid] = slave_state
             self.slave_states[slave_pid]["task_details"] = tasks
 
         return self.slave_states
 
+
 class MesosStatsException(Exception):
     pass
+
 
 def slave_metrics(mesos):
     metrics = [
         Metric("slave/mem_total",        "slave.[].mem.total"),
         Metric("slave/mem_used",         "slave.[].mem.used"),
-        Metric("slave/mem_percent",      "slave.[].mem.percent", Each(scale=100)),
+        Metric("slave/mem_percent",      "slave.[].mem.percent",
+               Each(scale=100)),
         Metric("slave/cpus_total",       "slave.[].cpus.total"),
         Metric("slave/cpus_used",        "slave.[].cpus.used"),
-        Metric("slave/cpus_percent",     "slave.[].cpus.percent", Each(scale=100)),
+        Metric("slave/cpus_percent",     "slave.[].cpus.percent",
+               Each(scale=100)),
         Metric("slave/disk_total",       "slave.[].disk.total"),
         Metric("slave/disk_used",        "slave.[].disk.total"),
         Metric("slave/tasks_running",    "slave.[].tasks.running"),
@@ -98,6 +134,7 @@ def slave_metrics(mesos):
             m.Add(slave, [pid])
 
     return metrics
+
 
 def slave_task_metrics(mesos):
     pattern = r'(?P<task_name>\S+)-teamcity\S+-(?P<instance_no>\d{1,2})-mesos_slave\S+'
@@ -144,13 +181,16 @@ def slave_task_metrics(mesos):
 
 def cluster_metrics(mesos):
     metrics = [
-        Metric("master/cpus_percent",     "cluster.cpus.percent", Each(scale=100)),
+        Metric("master/cpus_percent",     "cluster.cpus.percent",
+               Each(scale=100)),
         Metric("master/cpus_total",       "cluster.cpus.total"),
         Metric("master/cpus_used",        "cluster.cpus.used"),
-        Metric("master/mem_percent",      "cluster.mem.percent", Each(scale=100)),
+        Metric("master/mem_percent",      "cluster.mem.percent",
+               Each(scale=100)),
         Metric("master/mem_total",        "cluster.mem.total"),
         Metric("master/mem_used",         "cluster.mem.used"),
-        Metric("master/disk_percent",     "cluster.disk.percent", Each(scale=100)),
+        Metric("master/disk_percent",     "cluster.disk.percent",
+               Each(scale=100)),
         Metric("master/disk_total",       "cluster.disk.total"),
         Metric("master/disk_used",        "cluster.disk.used"),
         Metric("master/slaves_connected", "cluster.slaves.connected"),
