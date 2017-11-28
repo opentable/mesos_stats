@@ -1,7 +1,5 @@
 import sys
 import re
-from .metric import Metric, Each
-from .util import log, try_get_json
 import functools
 from multiprocessing import Pool
 from .metric import Metric, Each
