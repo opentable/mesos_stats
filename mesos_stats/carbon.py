@@ -3,6 +3,7 @@ import struct
 import time
 import os
 from mesos_stats.util import log
+from mesos_stats.metric import Metric
 
 class Carbon:
     def __init__(self, host, prefix, pickle=False, dry_run=False):
@@ -36,10 +37,10 @@ class Carbon:
         self.sock = None
 
     def send_metrics(self, metrics, timeout, timestamp):
+        num_datapoints = sum([len(m.data) if isinstance(m, Metric) else 1
+                              for m in metrics])
+        log('Sending {} datapoints to Carbon'.format(num_datapoints))
         if self.dry_run: # Don't do anything in test mode
-            for m in metrics:
-                for r in m.Results():
-                    print(r)
             return
         self.timeout = timeout
         ts = int(timestamp)

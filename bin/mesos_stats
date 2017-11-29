@@ -73,13 +73,17 @@ def main_loop(mesos, carbon, singularity):
                 if mesos:
                     with Timer("Mesos metrics collection"):
                         mesos.reset()
-                        metrics += slave_metrics(mesos)
-                        metrics += slave_task_metrics(mesos)
-                        metrics += cluster_metrics(mesos)
+                        metrics.extend(slave_metrics(mesos))
+                        if singularity:
+                            metrics.extend(slave_task_metrics(mesos,
+                                        singularity.active_requests()))
+                        else:
+                            metrics.extend(slave_task_metrics(mesos))
+                        metrics.extend(cluster_metrics(mesos))
                 if singularity:
                     with Timer("Singularity metrics collection"):
                         singularity.reset()
-                        metrics += singularity_metrics(singularity)
+                        metrics.extend(singularity_metrics(singularity))
                 if not metrics:
                     log("No stats this time; sleeping")
                 else:
