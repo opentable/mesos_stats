@@ -1,4 +1,3 @@
-#!/usr/bin/env python -u
 import os
 import sys
 import time
@@ -40,7 +39,8 @@ def init_env():
     print("==========================================")
 
     mesos = Mesos(master_pid)
-    carbon = Carbon(carbon_host, graphite_prefix, dry_run=dry_run)
+    carbon = Carbon(carbon_host, graphite_prefix,
+                    pickle=False, dry_run=dry_run)
 
     if singularity_host:
         singularity = Singularity(singularity_host)
