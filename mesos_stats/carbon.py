@@ -5,12 +5,14 @@ import os
 from mesos_stats.util import log
 
 class Carbon:
-    def __init__(self, host, prefix, pickle=False, dry_run=False):
+    def __init__(self, host, prefix, pickle=False, port=2003,
+                 pickle_port=2004, dry_run=False):
         self.host = host
         self.prefix = prefix
-        self.port = None
+        self.port = port
         self.sock = None
         self.pickle = pickle
+        self.pickle_port = pickle_port
         self.dry_run = dry_run
         self.timeout = 30
 
@@ -28,7 +30,7 @@ class Carbon:
         elif self.port != port:
             self.close()
             self.sock.connect(port)
-        timeval = struct.pack('ll', self.timeout, 0)
+        timeval = struct.pack('ll', int(self.timeout), 0)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, timeval)
 
     def close(self):
@@ -46,17 +48,13 @@ class Carbon:
         # If the send_metrics_pickle succeeds, we return early.
         # Well, I hope that's how it works.
         if self.pickle:
-            try:
-                self.send_metrics_pickle(metrics, ts)
-                return
-            except socket.error:
-                pass
-        
-        self.send_metrics_plaintext(metrics, ts)
+            self.send_metrics_pickle(metrics, ts)
+        else:
+            self.send_metrics_plaintext(metrics, ts)
 
     def send_metrics_plaintext(self, metrics, ts):
         try:
-            self.ensure_connected(2003)
+            self.ensure_connected(self.port)
             self.all_stats = ""
             def append(k, v):
                 line = "%s %f %d\n" % (k, v, ts)
@@ -67,7 +65,8 @@ class Carbon:
             iterations = 0
             while totalsent < l:
                 iterations += 1
-                sent = self.sock.send(self.all_stats[totalsent:])
+                data = self.all_stats[totalsent:]
+                sent = self.sock.send(data.encode())
                 if sent == 0:
                     raise RuntimeError("socket connection broken")
                 totalsent += sent
@@ -79,7 +78,7 @@ class Carbon:
 
     def send_metrics_pickle(self, metrics, ts):
         try:
-            self.ensure_connected(2004)
+            self.ensure_connected(self.pickle_port)
             tuples = []
             ts = int(time.time())
             def addToTuple(k, v):
