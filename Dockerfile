@@ -1,4 +1,4 @@
-FROM python:2.7.9-slim
+FROM python:3.6.3-slim
 
 MAINTAINER ssalisbury@opentable.com
 
