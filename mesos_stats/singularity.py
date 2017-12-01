@@ -87,16 +87,6 @@ def singularity_metrics(singularity):
         result = pool.map(functools.partial(get_failed_count,
                                             singularity=singularity),
                           singularity.active_requests())
-    '''
-    for t in singularity.active_requests():
-        failed_tasks = singularity.failed_tasks(t['request']['id'])
-        for h in failed_tasks:
-            if h['lastTaskState'] == 'TASK_FAILED' and h['updatedAt'] > int(round((time.time() - 1500)* 1000)) and h['updatedAt'] < int(round((time.time())* 1000)):
-                if h['taskId']['requestId'] in task_failed_count:
-                    task_failed_count[h['taskId']['requestId']] += 1
-                else:
-                    task_failed_count[h['taskId']['requestId']] = 1
-    '''
     scheduled_tasks = singularity.scheduled_tasks()
 
     # Alternative method to determine overdue tasks: look at scheduled start
