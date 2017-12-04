@@ -1,4 +1,5 @@
 import sys
+import re
 import functools
 from multiprocessing import Pool
 from .metric import Metric, Each
@@ -32,7 +33,6 @@ class Mesos:
         url = "http://%s/state.json" % self.leader_pid
         log("Getting master state from: %s" % url)
         return try_get_json(url)
-
 
     def state(self):
         if self.leader_state != None:
@@ -134,25 +134,96 @@ def slave_metrics(mesos):
     return metrics
 
 
-def slave_task_metrics(mesos):
+def old_slave_task_metrics(mesos):
+    '''
+    Add old style task metrics so we are backward compatible
+    '''
+    prefix = "slave.[].executors.singularity.tasks.[]"
+    metrics = [
+        Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs"),
+        Metric("cpus_user_time_secs",   prefix + ".cpus.user_time_secs"),
+        Metric("cpus_limit",            prefix + ".cpus.limit"),
+        Metric("mem_limit_bytes",       prefix + ".mem.limit_bytes"),
+        Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes"),
+    ]
     ms = []
     for pid in mesos.slaves():
         slave = mesos.slaves()[pid]
-        prefix = "slave.[].executors.singularity.tasks.[]"
-        metrics = [
-            Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs"),
-            Metric("cpus_user_time_secs",   prefix + ".cpus.user_time_secs"),
-            Metric("cpus_limit",            prefix + ".cpus.limit"),
-            Metric("mem_limit_bytes",       prefix + ".mem.limit_bytes"),
-            Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes"),
-        ]
+        # This is the old schema to retain for backwards compatibility
+        # The full task names are used
         for m in metrics:
             for t in slave["task_details"]:
-                # TODO:m.Add(t, "key1", "key2", ...)
                 m.Add(t["statistics"], [pid, t["executor_id"]])
+        ms.extend(metrics)
+    num_metrics = sum([len(m.data) for m in ms])
+    log('Number of old-style task metrics : {}'.format(num_metrics))
+    return ms
 
-        ms += metrics
 
+def new_slave_task_metrics(mesos, requests_json=None):
+    '''
+    This is the new schema
+    Create a metrics schema that is independent of slave IDs and Teamcity
+    version numbers.
+    e.g. mesos_stats.(env).tasks.(task_name)-(instance).mem.limit_bytes
+    '''
+    # We rely on 2 ways to get the request ID to use in the Graphite schema
+    # The first way relies no regex which covers 99% of the cases
+    regex = re.compile(r'(?P<task_name>\S+)-'
+                       'teamcity\S+-(?P<instance_no>\d{1,2})'
+                       '-mesos_slave\S+'
+    )
+    # The second way just compares the task name to see if it has any of the
+    # request names as a prefix
+    if requests_json:
+        requests = [r['request']['id'] for r in requests_json]
+    else:
+        requests = []
+
+    tc_prefix = "tasks.[]"
+    tc_metrics = [
+        Metric("cpus_system_time_secs", tc_prefix + ".cpus.system_time_secs"),
+        Metric("cpus_user_time_secs", tc_prefix + ".cpus.user_time_secs"),
+        Metric("cpus_limit", tc_prefix + ".cpus.limit"),
+        Metric("mem_limit_bytes", tc_prefix + ".mem.limit_bytes"),
+        Metric("mem_rss_bytes", tc_prefix + ".mem.rss_bytes"),
+    ]
+    ms = []
+    for pid in mesos.slaves():
+        slave = mesos.slaves()[pid]
+        for m in tc_metrics:
+            for t in slave["task_details"]:
+                match = regex.search(t["executor_id"])
+                if match:
+                    r = match.groupdict()
+                    task_name = r['task_name']
+                    instance_no = r['instance_no']
+                else:
+                    # Try and match the task name with one of the requests
+                    # We'll then use the request name as the task name
+                    for r in requests:
+                        if t['executor_id'].startswith(r):
+                            task_name = r
+                            break
+                    else:
+                        # We should never get here but just in case
+                        task_instance = t['executor_id'].split('-mesos-slave', 1)
+                        task_name = task_instance.rsplit('-', 1)[0]
+
+                    instance_no = t['executor_id'].split('-mesos-slave', 1)[0][-1]
+
+                task = "{}_{}".format(task_name, instance_no)
+                m.Add(t["statistics"], [task,])
+        ms.extend(tc_metrics)
+    num_metrics = sum([len(m.data) for m in ms])
+    log('Number of new-style task metrics : {}'.format(num_metrics))
+    return ms
+
+
+def slave_task_metrics(mesos, requests_json=None):
+    ms = []
+    ms.extend(old_slave_task_metrics(mesos))
+    ms.extend(new_slave_task_metrics(mesos, requests_json))
     return ms
 
 

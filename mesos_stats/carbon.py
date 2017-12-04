@@ -3,6 +3,7 @@ import struct
 import time
 import os
 from mesos_stats.util import log
+from mesos_stats.metric import Metric
 
 class Carbon:
     def __init__(self, host, prefix, pickle=False, port=2003,
@@ -38,17 +39,16 @@ class Carbon:
         self.sock = None
 
     def send_metrics(self, metrics, timeout, timestamp):
+        num_datapoints = sum([len(m.data) if isinstance(m, Metric) else 1
+                              for m in metrics])
+        log('Sending {} datapoints to Carbon'.format(num_datapoints))
         if self.dry_run: # Don't do anything in test mode
             return
         self.timeout = timeout
         ts = int(timestamp)
-        # Confusing control-flow...
-        # If the send_metrics_pickle fails on socket.error, we
-        # simply pass through to the send_metrics_plaintext.
-        # If the send_metrics_pickle succeeds, we return early.
-        # Well, I hope that's how it works.
         if self.pickle:
             self.send_metrics_pickle(metrics, ts)
+            return
         else:
             self.send_metrics_plaintext(metrics, ts)
 

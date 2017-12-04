@@ -8,7 +8,7 @@ class Metric:
         self.measurements = measurements
         self.data = []
 
-    def Add(self, datum, keys=[]): 
+    def Add(self, datum, keys=[]):
         if datum == None:
             return
         self.data.append((datum[self.path], keys))
@@ -33,7 +33,7 @@ def Each(scale=1):
     def Each_scale(metric):
         results = []
         for i, dk in enumerate(metric.data):
-            d, keys = dk 
+            d, keys = dk
             results.append(metric.Datapoint(keys, d*scale))
         return results
     return Each_scale
