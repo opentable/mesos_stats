@@ -207,7 +207,7 @@ def new_slave_task_metrics(mesos, requests_json=None):
                             break
                     else:
                         # We should never get here but just in case
-                        task_instance = t['executor_id'].split('-mesos-slave', 1)
+                        task_instance = t['executor_id'].split('-mesos-slave', 1)[0]
                         task_name = task_instance.rsplit('-', 1)[0]
 
                     instance_no = t['executor_id'].split('-mesos-slave', 1)[0][-1]

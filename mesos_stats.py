@@ -15,14 +15,16 @@ from mesos_stats.mesos import (
 from mesos_stats.carbon import Carbon
 from mesos_stats.singularity import Singularity, singularity_metrics
 
-DRY_RUN = False # Enable test mode. No stats sent to Graphite
 
 def init_env():
     master_host = os.environ['MESOS_MASTER']
     carbon_host = os.environ['CARBON_HOST']
     graphite_prefix = os.environ['GRAPHITE_PREFIX']
     singularity_host = os.environ.get('SINGULARITY_HOST', None)
-    dry_run = os.environ.get('DRY_RUN', DRY_RUN)
+    carbon_port = os.environ.get('CARBON_PORT', '2003')
+    dry_run = os.environ.get('DRY_RUN', False)
+    if dry_run == 'False':
+        dry_run = False
     master_pid = "%s:5050" % master_host
 
     if not all([master_host, carbon_host, graphite_prefix]):
@@ -39,7 +41,7 @@ def init_env():
     print("==========================================")
 
     mesos = Mesos(master_pid)
-    carbon = Carbon(carbon_host, graphite_prefix,
+    carbon = Carbon(carbon_host, graphite_prefix, port=int(carbon_port),
                     pickle=False, dry_run=dry_run)
 
     if singularity_host:

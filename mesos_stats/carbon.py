@@ -2,8 +2,12 @@ import socket
 import struct
 import time
 import os
+import sys
+import pickle
 from mesos_stats.util import log
 from mesos_stats.metric import Metric
+
+CHUNK_SIZE = 5000 # Maximum number of stats to send to Carbon in one go
 
 class Carbon:
     def __init__(self, host, prefix, pickle=False, port=2003,
@@ -15,14 +19,14 @@ class Carbon:
         self.pickle = pickle
         self.pickle_port = pickle_port
         self.dry_run = dry_run
-        self.timeout = 30
+        self.timeout = 30.0
 
     def connect(self, port):
         if self.sock != None:
             raise Exception("Attempt to connect an already connected socket.")
         self.port = port
         self.sock = socket.socket()
-        self.sock.settimeout(1.0)
+        self.sock.settimeout(self.timeout)
         self.sock.connect((self.host, self.port))
 
     def ensure_connected(self, port):
@@ -31,8 +35,6 @@ class Carbon:
         elif self.port != port:
             self.close()
             self.sock.connect(port)
-        timeval = struct.pack('ll', int(self.timeout), 0)
-        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDTIMEO, timeval)
 
     def close(self):
         self.sock.close()
@@ -43,6 +45,7 @@ class Carbon:
                               for m in metrics])
         log('Sending {} datapoints to Carbon'.format(num_datapoints))
         if self.dry_run: # Don't do anything in test mode
+            log('DRY RUN - Not sending stats to carbon')
             return
         self.timeout = timeout
         ts = int(timestamp)
@@ -52,31 +55,35 @@ class Carbon:
         else:
             self.send_metrics_plaintext(metrics, ts)
 
+    def _chunks(self, l, n):
+        """Yield successive n-sized chunks from l."""
+        for i in range(0, len(l), n):
+            yield l[i:i + n]
+
     def send_metrics_plaintext(self, metrics, ts):
+        log('Send metrics via Plaintext')
         try:
             self.ensure_connected(self.port)
-            self.all_stats = ""
-            def append(k, v):
-                line = "%s %f %d\n" % (k, v, ts)
-                self.all_stats += line
-            self.forEachPrefixedMetric(metrics, append)
-            totalsent = 0
+            self.all_stats = []
+            for m in metrics:
+                for k, v in m.Results():
+                    self.all_stats.append("{}.{} {} {}".format(self.prefix,
+                                                               k, v, ts))
             l = len(self.all_stats)
             iterations = 0
-            while totalsent < l:
+            for chunk in self._chunks(self.all_stats, CHUNK_SIZE):
                 iterations += 1
-                data = self.all_stats[totalsent:]
-                sent = self.sock.send(data.encode())
+                data = "\n".join(chunk) + '\n'
+                sent = self.sock.sendall(data.encode())
                 if sent == 0:
                     raise RuntimeError("socket connection broken")
-                totalsent += sent
             if iterations != 1:
                 log("INFO: Send took %s iterations" % iterations)
-            log("%s out of %s (%s%s) characters sent successfully in %s iteration(s)." % (totalsent, l, (l/totalsent)*100, "%", iterations))
         finally:
             self.close()
 
     def send_metrics_pickle(self, metrics, ts):
+        log('Send metrics via Pickle')
         try:
             self.ensure_connected(self.pickle_port)
             tuples = []
