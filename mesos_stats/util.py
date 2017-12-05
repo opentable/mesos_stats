@@ -4,6 +4,7 @@ import sys
 import requests
 
 def try_get_json(url, timeout=20):
+    t = time.time()
     try:
         response = requests.get(url, timeout=timeout)
     except requests.exceptions.Timeout:
