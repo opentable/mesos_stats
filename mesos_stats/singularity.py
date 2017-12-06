@@ -44,7 +44,7 @@ class Singularity:
     @functools.lru_cache(maxsize=None)
     def _get(self, uri):
         url = "http://%s/api%s" % (self.host, uri)
-        log("Getting %s" % url)
+        #log("Getting %s" % url)
         return try_get_json(url)
 
 
