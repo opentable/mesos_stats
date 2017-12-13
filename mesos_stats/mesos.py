@@ -27,6 +27,7 @@ class Mesos:
         self.slave_states = None
         self.get_slave.cache_clear()
         self.get_slave_statistics.cache_clear()
+        self.get_cluster_stats.cache_clear()
 
 
     def get_master_state(self):
