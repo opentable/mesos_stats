@@ -5,7 +5,7 @@ from multiprocessing import Pool
 from .metric import Metric, Each
 from .util import log, try_get_json
 
-POOL_SIZE = 20 # Number of parallel processes to query Mesos
+POOL_SIZE = 10 # Number of parallel processes to query Mesos
 
 class Mesos:
     def __init__(self, master_pid):
