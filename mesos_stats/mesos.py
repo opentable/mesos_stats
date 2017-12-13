@@ -77,10 +77,10 @@ class Mesos:
 
 
     def _update_slave_state(self, slave_state):
+        slave_pid = slave_state['pid']
         if slave_state == None:
             log("Slave lost: %s" % slave_pid)
             return
-        slave_pid = slave_state['pid']
         log("Getting stats for %s" % slave_pid)
         slave_state = self.get_slave(slave_pid)
         tasks = self.get_slave_statistics(slave_pid)
@@ -93,8 +93,15 @@ class Mesos:
         self.slave_states = {}
         if self.state() == None:
             return []
+        with Pool(processes=POOL_SIZE, maxtasksperchild=1) as pool:
+            result = pool.map(self._update_slave_state,
+                              self.state()["slaves"], chunksize=1)
+        '''
         with Pool(processes=POOL_SIZE) as pool:
-            result = pool.map(self._update_slave_state, self.state()["slaves"])
+            result = pool.map(self._update_slave_state,
+                              self.state()["slaves"])
+        '''
+        print('result size = {}'.format(len(result)))
         for (slave_pid, slave_state, tasks) in result:
             self.slave_states[slave_pid] = slave_state
             self.slave_states[slave_pid]["task_details"] = tasks
