@@ -4,7 +4,7 @@ from multiprocessing import Pool
 from .metric import Metric, Each
 from .util import log, try_get_json
 
-POOL_SIZE = 20 # Number of parallel processes to query singularity
+POOL_SIZE = 10 # Number of parallel processes to query singularity
 
 class Singularity:
     def __init__(self, host):
