@@ -1,6 +1,7 @@
 import sys
 import re
 import functools
+import requests
 from multiprocessing import Pool
 from .metric import Metric, Each
 from .util import log, try_get_json
@@ -8,105 +9,96 @@ from .util import log, try_get_json
 POOL_SIZE = 10 # Number of parallel processes to query Mesos
 
 class Mesos:
-    def __init__(self, master_pid):
-        self.original_master_pid = master_pid
-        self.leader_pid = master_pid
-        self.leader_state = None
+    """
+        Mesos class to retrieve and store metrics
+    """
+    def __init__(self, master_list):
+        self.master_list = master_list
+        self.master_state = None
         self.slave_states = None
+        self.master = None
+        self.cluster_metrics = [
+            Metric("master/cpus_percent",     "cluster.cpus.percent",
+                   Each(scale=100)),
+            Metric("master/cpus_total",       "cluster.cpus.total"),
+            Metric("master/cpus_used",        "cluster.cpus.used"),
+            Metric("master/mem_percent",      "cluster.mem.percent",
+                   Each(scale=100)),
+            Metric("master/mem_total",        "cluster.mem.total"),
+            Metric("master/mem_used",         "cluster.mem.used"),
+            Metric("master/disk_percent",     "cluster.disk.percent",
+                   Each(scale=100)),
+            Metric("master/disk_total",       "cluster.disk.total"),
+            Metric("master/disk_used",        "cluster.disk.used"),
+            Metric("master/slaves_connected", "cluster.slaves.connected"),
+            Metric("master/tasks_failed",     "cluster.tasks.failed"),
+            Metric("master/tasks_finished",   "cluster.tasks.finished"),
+            Metric("master/tasks_killed",     "cluster.tasks.killed"),
+            Metric("master/tasks_lost",       "cluster.tasks.lost"),
+            Metric("master/tasks_running",    "cluster.tasks.running"),
+            Metric("master/tasks_staging",    "cluster.tasks.staging"),
+            Metric("master/tasks_starting",   "cluster.tasks.starting"),
+        ]
+
+        # You can make an API call to any of the Master hosts
+        # They will do a HTTP 307 redirect to the acting leader
+        # We just need to be concerned that a host might be down and cause
+        # all subsequent API calls to fail.
+        # Let's test each master host in turn to get a working one
+        for master in master_list:
+            try:
+                url = "http://{}/version".format(master)
+                a = try_get_json(url)
+                # HTTP call works, use this host from now on
+                self.master = master
+            except requests.exceptions.RequestException as e:
+                print(str(e))
+                continue
+            break
+        else: # We've failed to reach all masters, quit.
+            raise MesosStatsException('Unable to reach Mesos Masters')
+
+        self.slaves = try_get_json("http://%s/slaves" % self.master)['slaves']
+
+    def update(self):
+        """ Retrieves slave and master metrics"""
+        self.cluster_metrics = self._get_cluster_metrics()
+        self.slave_metrics = self._get_slave_metrics()
+        self.executors = self._get_executors()
 
 
-    def show_cache_info(self):
-        log("get_slave cache : {}".format(self.get_slave.cache_info()))
-        log("get_slave_stats cache : {}".format(self.get_slave.cache_info()))
-        log("get_cluster_stats cache : {}".format(self.get_slave.cache_info()))
+    def _get_cluster_metrics(self):
+        return try_get_json("http://{}/metrics/snapshot".format(self.master))
+
+
+    def _get_slave_metrics(self):
+        if not self.slaves:
+            return
+        res = {}
+        for slave in self.slaves:
+            metric = try_get_json("http://{}:{}/metrics/snapshot"\
+                                 .format(slave['hostname'], slave['port']))
+            res[slave.get('hostname')] = metric
+        return res
+
+
+    def _get_executors(self):
+        if not self.slaves:
+            return
+        res = {}
+        for slave in self.slaves:
+            executors = try_get_json("http://{}:{}/monitor/statistics.json"\
+                                 .format(slave['hostname'], slave['port']))
+            res[slave.get('hostname')] = executors
+        return res
 
 
     def reset(self):
-        self.show_cache_info()
-        self.leader_state = None
-        self.slave_states = None
-        self.get_slave.cache_clear()
-        self.get_slave_statistics.cache_clear()
-        self.get_cluster_stats.cache_clear()
+        self.slaves = None
+        self.cluster_metrics = None
+        self.slave_metrics = None
+        self.executors = None
 
-
-    def get_master_state(self):
-        url = "http://%s/state.json" % self.leader_pid
-        log("Getting master state from: %s" % url)
-        return try_get_json(url)
-
-    def state(self):
-        if self.leader_state != None:
-            return self.leader_state
-        try:
-            master = self.get_master_state()
-        except:
-            if self.leader_pid == self.original_master_pid:
-                log("Already using originally configured mesos master pid.")
-                raise MesosStatsException("Unable to locate any Mesos master \
-                                    at {}".format(self.original_master_pid))
-            log("Unable to hit last known leader, falling back to configured \
-                master: {}".format(self.original_master_pid))
-            self.leader_pid = self.original_master_pid
-            return self.state()
-        if master == None:
-            return None
-        if master["pid"] == master["leader"]:
-            self.leader_state = master
-            return self.leader_state
-        else:
-            self.leader_pid = master["leader"]
-        return self.state()
-
-
-    @functools.lru_cache(maxsize=None)
-    def get_cluster_stats(self):
-        if self.state() == None:
-            return None
-        return try_get_json("http://%s/metrics/snapshot" \
-                            % self.state()["leader"])
-
-    @functools.lru_cache(maxsize=None)
-    def get_slave(self, slave_pid):
-        return try_get_json("http://%s/metrics/snapshot" % slave_pid)
-
-
-    @functools.lru_cache(maxsize=None)
-    def get_slave_statistics(self, slave_pid):
-        return try_get_json("http://%s/monitor/statistics.json" % slave_pid)
-
-
-    def _update_slave_state(self, slave_state):
-        slave_pid = slave_state['pid']
-        if slave_state == None:
-            log("Slave lost: %s" % slave_pid)
-            return
-        log("Getting stats for %s" % slave_pid)
-        slave_state = self.get_slave(slave_pid)
-        tasks = self.get_slave_statistics(slave_pid)
-        return(slave_pid, slave_state, tasks)
-
-
-    def slaves(self):
-        if self.slave_states != None:
-            return self.slave_states
-        self.slave_states = {}
-        if self.state() == None:
-            return []
-        with Pool(processes=POOL_SIZE, maxtasksperchild=1) as pool:
-            result = pool.map(self._update_slave_state,
-                              self.state()["slaves"], chunksize=1)
-        '''
-        with Pool(processes=POOL_SIZE) as pool:
-            result = pool.map(self._update_slave_state,
-                              self.state()["slaves"])
-        '''
-        print('result size = {}'.format(len(result)))
-        for (slave_pid, slave_state, tasks) in result:
-            self.slave_states[slave_pid] = slave_state
-            self.slave_states[slave_pid]["task_details"] = tasks
-
-        return self.slave_states
 
 
 class MesosStatsException(Exception):
