@@ -5,16 +5,22 @@ class Singularity:
     def __init__(self, host):
         self.host = host
         self.update()
+        self.state = {}
+        self.active_requests = []
+        self.disaster_stats = {}
+        self.active_tasks = []
 
     def reset(self):
-        self.state = None
-        self.active_requests = None
-        self.disasters_stats = None
+        self.state = {}
+        self.active_requests = []
+        self.disasters_stats = {}
+        self.active_tasks = []
 
     def update(self):
         self.state = self.get_state()
         self.active_requests = self.get_active_requests()
         self.disasters_stats = self.get_disasters_stats()
+        self.active_tasks = self.get_active_tasks()
 
 
     def get_disasters_stats(self):
@@ -29,10 +35,28 @@ class Singularity:
         return self._get("/requests")
 
 
+    def get_active_tasks(self):
+        return self._get("/tasks/active")
+
+
     def _get(self, uri):
         url = "http://%s/api%s" % (self.host, uri)
         #log("Getting %s" % url)
         return try_get_json(url)
+
+
+    def get_singularity_lookup(self):
+        '''
+            return a lookup dict so we can quickly map mesos tasks to their
+            respective singularity request names and instance number
+        '''
+        lookup = {}
+        for t in self.active_tasks:
+            request_name = t['taskId']['requestId']
+            instance = t['taskId']['instanceNo']
+            mesos_task_name = t['mesosTask']['taskId']['value']
+            lookup[mesos_task_name] = '{}_{}'.format(request_name, instance)
+        return lookup
 
 
 class SingularityCarbon:

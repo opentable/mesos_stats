@@ -14,33 +14,9 @@ class Mesos:
     '''
     def __init__(self, master_list):
         self.master_list = master_list
-        self.master_state = None
-        self.slave_states = None
-        self.master = None
-        self.cluster_metrics = [
-            Metric("master/cpus_percent",     "cluster.cpus.percent",
-                   Each(scale=100)),
-            Metric("master/cpus_total",       "cluster.cpus.total"),
-            Metric("master/cpus_used",        "cluster.cpus.used"),
-            Metric("master/mem_percent",      "cluster.mem.percent",
-                   Each(scale=100)),
-            Metric("master/mem_total",        "cluster.mem.total"),
-            Metric("master/mem_used",         "cluster.mem.used"),
-            Metric("master/disk_percent",     "cluster.disk.percent",
-                   Each(scale=100)),
-            Metric("master/disk_total",       "cluster.disk.total"),
-            Metric("master/disk_used",        "cluster.disk.used"),
-            Metric("master/slaves_connected", "cluster.slaves.connected"),
-            Metric("master/tasks_failed",     "cluster.tasks.failed"),
-            Metric("master/tasks_finished",   "cluster.tasks.finished"),
-            Metric("master/tasks_killed",     "cluster.tasks.killed"),
-            Metric("master/tasks_lost",       "cluster.tasks.lost"),
-            Metric("master/tasks_running",    "cluster.tasks.running"),
-            Metric("master/tasks_staging",    "cluster.tasks.staging"),
-            Metric("master/tasks_starting",   "cluster.tasks.starting"),
-        ]
         self.master = self._get_master()
-        self.slaves = try_get_json("http://%s/slaves" % self.master)['slaves']
+        self.slaves = try_get_json("http://%s/slaves" % self.master)\
+                        .get('slaves', None)
 
 
     def _get_master(self):
@@ -69,9 +45,12 @@ class Mesos:
         if not self.cluster_metrics['master/elected']:
             self._get_master()
             self.cluster_metrics = self._get_cluster_metrics()
+
         self.update_ts = int(time.time())
-        self.slave_metrics = self._get_slave_metrics()
-        self.executors = self._get_executors()
+
+        if self.slaves:
+            self.slave_metrics = self._get_slave_metrics()
+            self.executors = self._get_executors()
 
 
     def _get_cluster_metrics(self):
@@ -168,10 +147,11 @@ class MesosCarbon:
     }
 
 
-    def __init__(self, mesos, queue, pickle=False):
+    def __init__(self, mesos, queue, singularity=None, pickle=False):
         self.mesos = mesos
         self.pickle = pickle
         self.queue = queue
+        self.singularity = singularity
 
 
     def _convert(self, metric_name, value):
@@ -223,6 +203,43 @@ class MesosCarbon:
                 counter += 1
         log('flushed {} executor metrics'.format(counter))
         self.mesos.executor_metrics = None
+
+
+
+    def send_alternate_executor_metrics(self):
+        '''
+            This method is similar to flush_executor_metrics but avoids having
+            the slave names in the metric_name. All task metrics will be
+            populated under {prefix}.tasks.task_name.*.*
+
+            Another feature of this method is that task names will be
+            shortened to just their Singularity request name and their
+            respective instance numbers
+        '''
+        mapping = {}
+        for k, v in self.executor_metric_mapping.items():
+            mapping[k] = v.replace('slave.{}.executors.singularity.tasks.{}',
+                                  'tasks.{}')
+
+        sing_lookup = self.singularity.get_singularity_lookup()
+        counter = 0
+        for slave_name, executors in self.mesos.executors.items():
+            for e in executors:
+                if e['framework_id'] == 'Singularity':
+                    task_name = sing_lookup.get(e['executor_id'],
+                                               e['executor_id'])
+                else: # Use mesos task names for non singularity tasks
+                    task_name = e['executor_id']
+
+                for k, v in e['statistics'].items():
+                    try:
+                        metric_name = mapping[k].format(task_name)
+                    except KeyError:
+                        continue
+                    self._add_to_queue(metric_name, v)
+                counter += 1
+        log('Sent {} alternate executor metrics'.format(counter))
+
 
     def _add_to_queue(self, metric_name, metric_value):
         # The carbon plaintext protocol for metrics are

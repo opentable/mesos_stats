@@ -110,6 +110,28 @@ class MesosTest(unittest.TestCase):
 
         ]
 
+        self.tasks_api = [
+            {
+               "taskId":{
+                  "requestId":"my-request",
+                  "deployId":"teamcity_2018_01_17T00_04_40",
+                  "startedAt":1516147481669,
+                  "instanceNo":2,
+                  "host":"mesos_slave21_qa_sf.qasql.opentable.com",
+                  "sanitizedHost":"mesos_slave21_qa_sf.qasql.opentable.com",
+                  "sanitizedRackId":"FIXME",
+                  "rackId":"FIXME",
+                  "id":"my-mesos-task"
+               },
+               "mesosTask":{
+                  "taskId":{
+                     "value":"my-mesos-task"
+                  },
+                  "name":"pp-promoted-inventory-service",
+                }
+            }
+        ]
+
 
     def test_singularity_carbon(self):
         with requests_mock.Mocker(real_http=True) as m:
@@ -119,7 +141,10 @@ class MesosTest(unittest.TestCase):
                            json=self.requests_api, status_code=200)
             m.register_uri('GET', 'http://server/api/disasters/stats',
                            json=self.disaster_api, status_code=200)
+            m.register_uri('GET', 'http://server/api/tasks/active',
+                           json=self.tasks_api, status_code=200)
             s = Singularity('server')
+            s.update()
             q = []
             sc = SingularityCarbon(s, q)
             sc.flush_metrics()
@@ -144,4 +169,21 @@ class MesosTest(unittest.TestCase):
             self.assertIsInstance(q2[0], tuple)
             self.assertIsInstance(q2[0][1], tuple)
 
+
+    def test_get_singularity_lookup(self):
+        with requests_mock.Mocker(real_http=True) as m:
+            m.register_uri('GET', 'http://server/api/state',
+                           json=self.state_api, status_code=200)
+            m.register_uri('GET', 'http://server/api/requests',
+                           json=self.requests_api, status_code=200)
+            m.register_uri('GET', 'http://server/api/disasters/stats',
+                           json=self.disaster_api, status_code=200)
+            m.register_uri('GET', 'http://server/api/tasks/active',
+                           json=self.tasks_api, status_code=200)
+            s = Singularity('server')
+            s.update()
+        mapping = s.get_singularity_lookup()
+
+        self.assertIsInstance(mapping, dict)
+        self.assertEqual(mapping['my-mesos-task'], 'my-request_2')
 

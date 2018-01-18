@@ -4,6 +4,7 @@ import requests
 import requests_mock
 
 from mesos_stats.mesos import Mesos, MesosStatsException, MesosCarbon
+from mesos_stats.singularity import Singularity
 
 '''
 import sys
@@ -24,6 +25,8 @@ class MesosTest(unittest.TestCase):
                 }
             ]
         }
+
+
 
 
     def test_mesos_raises_exception_for_no_master(self):
@@ -181,5 +184,73 @@ class MesosTest(unittest.TestCase):
             self.assertTrue(isinstance(executors['slave1'], list))
             self.assertEqual(executors['slave1'][0]['executor_id'], "mytask")
 
+    def test_send_alternate_executor_metrics(self):
+        with requests_mock.Mocker(real_http=True) as m:
+            tasks_api = [
+                {
+                   "taskId":{
+                      "requestId":"my-request",
+                      "deployId":"teamcity_2018_01_17T00_04_40",
+                      "startedAt":1516147481669,
+                      "instanceNo":2,
+                      "host":"mesos_slave21_qa_sf.qasql.opentable.com",
+                      "sanitizedHost":"mesos_slave21_qa_sf.qasql.opentable.com",
+                      "sanitizedRackId":"FIXME",
+                      "rackId":"FIXME",
+                      "id":"my-mesos-task"
+                   },
+                   "mesosTask":{
+                      "taskId":{
+                         "value":"my-mesos-task"
+                      },
+                      "name":"pp-promoted-inventory-service",
+                    }
+                }
+            ]
+
+            res = [
+                {
+                    "executor_id": "my-mesos-task",
+                    "executor_name": "mytask command",
+                    "framework_id": "Singularity",
+                    "source": "mytask",
+                    "statistics": {
+                        "cpus_limit": 0.13,
+                        "cpus_system_time_secs": 22.56,
+                        "cpus_user_time_secs": 104.88,
+                        "mem_limit_bytes": 301989888,
+                        "mem_rss_bytes": 87113728,
+                        "timestamp": 1516124496.89259
+                    }
+                }
+            ]
+
+            m.register_uri('GET', 'http://slave1:5051/monitor/statistics.json',
+                           json=res, status_code=200)
+            m.register_uri('GET', 'http://slave1:5051/metrics/snapshot',
+                           json={}, status_code=200)
+            m.register_uri('GET', 'http://mesos1/slaves',
+                           json=self.slaves_api, status_code=200)
+            m.register_uri('GET', 'http://mesos1/metrics/snapshot',
+                           json={'master/elected': 1}, status_code=200)
+            m.register_uri('GET', 'http://server/api/state',
+                           json={}, status_code=200)
+            m.register_uri('GET', 'http://server/api/requests',
+                           json=[], status_code=200)
+            m.register_uri('GET', 'http://server/api/disasters/stats',
+                           json={}, status_code=200)
+            m.register_uri('GET', 'http://server/api/tasks/active',
+                           json=tasks_api, status_code=200)
+
+            s = Singularity('server')
+            mesos = Mesos(master_list=['mesos1'])
+            mesos.update()
+            q = []
+            mc = MesosCarbon(mesos, q, singularity=s)
+            mc.send_alternate_executor_metrics()
+
+            self.assertTrue(q)
+            self.assertEqual(len(q), 5)
+            self.assertTrue(q[0].split()[0].startswith('tasks.my-request_2.'))
 
 
