@@ -81,7 +81,6 @@ class Mesos:
         if slave_state == None:
             log("Slave lost: %s" % slave_pid)
             return
-        log("Getting stats for %s" % slave_pid)
         slave_state = self.get_slave(slave_pid)
         tasks = self.get_slave_statistics(slave_pid)
         return(slave_pid, slave_state, tasks)
@@ -101,7 +100,6 @@ class Mesos:
             result = pool.map(self._update_slave_state,
                               self.state()["slaves"])
         '''
-        print('result size = {}'.format(len(result)))
         for (slave_pid, slave_state, tasks) in result:
             self.slave_states[slave_pid] = slave_state
             self.slave_states[slave_pid]["task_details"] = tasks
@@ -154,7 +152,6 @@ def old_slave_task_metrics(mesos):
         Metric("mem_limit_bytes",       prefix + ".mem.limit_bytes"),
         Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes"),
     ]
-    ms = []
     for pid in mesos.slaves():
         slave = mesos.slaves()[pid]
         # This is the old schema to retain for backwards compatibility
@@ -162,10 +159,9 @@ def old_slave_task_metrics(mesos):
         for m in metrics:
             for t in slave["task_details"]:
                 m.Add(t["statistics"], [pid, t["executor_id"]])
-        ms.extend(metrics)
-    num_metrics = sum([len(m.data) for m in ms])
+    num_metrics = sum([len(m.data) for m in metrics])
     log('Number of old-style task metrics : {}'.format(num_metrics))
-    return ms
+    return metrics
 
 
 def new_slave_task_metrics(mesos, requests_json=None):
@@ -196,7 +192,6 @@ def new_slave_task_metrics(mesos, requests_json=None):
         Metric("mem_limit_bytes", tc_prefix + ".mem.limit_bytes"),
         Metric("mem_rss_bytes", tc_prefix + ".mem.rss_bytes"),
     ]
-    ms = []
     for pid in mesos.slaves():
         slave = mesos.slaves()[pid]
         for m in tc_metrics:
@@ -222,10 +217,9 @@ def new_slave_task_metrics(mesos, requests_json=None):
 
                 task = "{}_{}".format(task_name, instance_no)
                 m.Add(t["statistics"], [task,])
-        ms.extend(tc_metrics)
-    num_metrics = sum([len(m.data) for m in ms])
+    num_metrics = sum([len(m.data) for m in tc_metrics])
     log('Number of new-style task metrics : {}'.format(num_metrics))
-    return ms
+    return tc_metrics
 
 
 def slave_task_metrics(mesos, requests_json=None):
