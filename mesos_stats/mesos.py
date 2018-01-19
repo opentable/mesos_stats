@@ -54,7 +54,8 @@ class Mesos:
         if self.slaves:
             self.slave_metrics = self._get_slave_metrics()
             self.executors = self._get_executors()
-            log('Total number of executors = {}'.format(sum(len(e) for e in self.executors)))
+            log('Total number of executors = {}'.format(sum(len(e)
+                                            for e in self.executors)))
 
 
     def _get_cluster_metrics(self):
@@ -220,9 +221,10 @@ class MesosCarbon:
         for slave_name, executors in self.mesos.executors.items():
             for e in executors:
                 for k, v in e['statistics'].items():
+                    task_name = self._clean_metric_name(e['executor_id'])
                     try:
                         metric_name = self.executor_metric_mapping[k]\
-                                .format(slave_name, e['executor_id'])
+                                .format(slave_name, task_name)
                     except KeyError:
                         continue
                     self._add_to_queue(metric_name, v)
@@ -256,6 +258,8 @@ class MesosCarbon:
                                                e['executor_id'])
                 else: # Use mesos task names for non singularity tasks
                     task_name = e['executor_id']
+
+                task_name = self._clean_metric_name(task_name)
 
                 for k, v in e['statistics'].items():
                     try:
