@@ -2,11 +2,11 @@ import sys
 import re
 import time
 import requests
-from multiprocessing import Pool
-from .metric import Metric, Each
+import pprint
+from concurrent import futures
 from .util import log, try_get_json
 
-POOL_SIZE = 10 # Number of parallel processes to query Mesos
+POOL_SIZE = 10 # Number of parallel threads to query Mesos
 
 class Mesos:
     '''
@@ -17,6 +17,8 @@ class Mesos:
         self.master = self._get_master()
         self.slaves = try_get_json("http://%s/slaves" % self.master)\
                         .get('slaves', None)
+        self.slave_metrics = {}
+        self.executors = []
 
 
     def _get_master(self):
@@ -46,11 +48,13 @@ class Mesos:
             self._get_master()
             self.cluster_metrics = self._get_cluster_metrics()
 
+        self.slaves = try_get_json("http://%s/slaves" % self.master)\
+                        .get('slaves', None)
         self.update_ts = int(time.time())
-
         if self.slaves:
             self.slave_metrics = self._get_slave_metrics()
             self.executors = self._get_executors()
+            log('Total number of executors = {}'.format(sum(len(e) for e in self.executors)))
 
 
     def _get_cluster_metrics(self):
@@ -60,30 +64,36 @@ class Mesos:
     def _get_slave_metrics(self):
         if not self.slaves:
             return
-        res = {}
-        for slave in self.slaves:
+
+        def task(slave):
             metric = try_get_json("http://{}:{}/metrics/snapshot"\
                                  .format(slave['hostname'], slave['port']))
-            res[slave.get('hostname')] = metric
-        return res
+            return(slave.get('hostname'), metric)
+
+        ex = futures.ThreadPoolExecutor(max_workers=POOL_SIZE)
+        results = ex.map(task, self.slaves)
+        return { r[0]: r[1] for r in results }
 
 
     def _get_executors(self):
         if not self.slaves:
             return
-        res = {}
-        for slave in self.slaves:
+
+        def task(slave):
             executors = try_get_json("http://{}:{}/monitor/statistics.json"\
                                  .format(slave['hostname'], slave['port']))
-            res[slave.get('hostname')] = executors
-        return res
+            return(slave.get('hostname'), executors)
+
+        ex = futures.ThreadPoolExecutor(max_workers=POOL_SIZE)
+        results = ex.map(task, self.slaves)
+        return { r[0]: r[1] for r in results }
 
 
     def reset(self):
-        self.slaves = None
-        self.cluster_metrics = None
-        self.slave_metrics = None
-        self.executors = None
+        self.cluster_metrics = {}
+        self.slaves = {}
+        self.slave_metrics = {}
+        self.executors = []
         self.update_ts = None
 
 
@@ -162,10 +172,23 @@ class MesosCarbon:
         return (metric_name, value)
 
 
+    def flush_all(self):
+        self.flush_cluster_metrics()
+        self.flush_slave_metrics()
+        if self.singularity:
+            self.send_alternate_executor_metrics()
+        self.flush_executor_metrics()
+
+
+    def _clean_metric_name(self, name):
+        return name.replace('.', '_')
+
+
     def flush_slave_metrics(self):
         counter = 0
         for slave_name, metrics in self.mesos.slave_metrics.items():
             for k, v in metrics.items():
+                slave_name = self._clean_metric_name(slave_name)
                 try:
                     metric_name = self.slave_metric_mapping[k]\
                                     .format(slave_name)
@@ -194,11 +217,14 @@ class MesosCarbon:
 
     def flush_executor_metrics(self):
         counter = 0
-        for slave_name, executors in self.mesos.executor_metrics.items():
+        for slave_name, executors in self.mesos.executors.items():
             for e in executors:
                 for k, v in e['statistics'].items():
-                    metric_name = self.executor_metric_mapping[k]\
-                            .format(slave_name, e['executor_id'])
+                    try:
+                        metric_name = self.executor_metric_mapping[k]\
+                                .format(slave_name, e['executor_id'])
+                    except KeyError:
+                        continue
                     self._add_to_queue(metric_name, v)
                 counter += 1
         log('flushed {} executor metrics'.format(counter))
@@ -247,69 +273,9 @@ class MesosCarbon:
         # The pickle protocol accepts a tuple
         # [(path, (timestamp, value)), ...]
         if not self.pickle:
-            self.queue.append('{} {} {}'.format(metric_name, metric_value,
+            self.queue.put('{} {} {}'.format(metric_name, metric_value,
                                                 self.mesos.update_ts))
         else:
-            self.queue.append((metric_name,
+            self.queue.put((metric_name,
                                (self.mesos.update_ts, metric_value)))
-
-
-def new_slave_task_metrics(mesos, requests_json=None):
-    '''
-    This is the new schema
-    Create a metrics schema that is independent of slave IDs and Teamcity
-    version numbers.
-    e.g. mesos_stats.(env).tasks.(task_name)-(instance).mem.limit_bytes
-    '''
-    # We rely on 2 ways to get the request ID to use in the Graphite schema
-    # The first way relies no regex which covers 99% of the cases
-    regex = re.compile(r'(?P<task_name>\S+)-'
-                       'teamcity\S+-(?P<instance_no>\d{1,2})'
-                       '-mesos_slave\S+'
-    )
-    # The second way just compares the task name to see if it has any of the
-    # request names as a prefix
-    if requests_json:
-        requests = [r['request']['id'] for r in requests_json]
-    else:
-        requests = []
-
-    tc_prefix = "tasks.[]"
-    tc_metrics = [
-        Metric("cpus_system_time_secs", tc_prefix + ".cpus.system_time_secs"),
-        Metric("cpus_user_time_secs", tc_prefix + ".cpus.user_time_secs"),
-        Metric("cpus_limit", tc_prefix + ".cpus.limit"),
-        Metric("mem_limit_bytes", tc_prefix + ".mem.limit_bytes"),
-        Metric("mem_rss_bytes", tc_prefix + ".mem.rss_bytes"),
-    ]
-    ms = []
-    for pid in mesos.slaves():
-        slave = mesos.slaves()[pid]
-        for m in tc_metrics:
-            for t in slave["task_details"]:
-                match = regex.search(t["executor_id"])
-                if match:
-                    r = match.groupdict()
-                    task_name = r['task_name']
-                    instance_no = r['instance_no']
-                else:
-                    # Try and match the task name with one of the requests
-                    # We'll then use the request name as the task name
-                    for r in requests:
-                        if t['executor_id'].startswith(r):
-                            task_name = r
-                            break
-                    else:
-                        # We should never get here but just in case
-                        task_instance = t['executor_id'].split('-mesos-slave', 1)[0]
-                        task_name = task_instance.rsplit('-', 1)[0]
-
-                    instance_no = t['executor_id'].split('-mesos-slave', 1)[0][-1]
-
-                task = "{}_{}".format(task_name, instance_no)
-                m.Add(t["statistics"], [task,])
-        ms.extend(tc_metrics)
-    num_metrics = sum([len(m.data) for m in ms])
-    log('Number of new-style task metrics : {}'.format(num_metrics))
-    return ms
 

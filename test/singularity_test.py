@@ -1,5 +1,7 @@
 import unittest
 import requests
+import multiprocessing
+import queue
 import requests_mock
 
 from mesos_stats.singularity import Singularity, SingularityCarbon
@@ -145,29 +147,38 @@ class MesosTest(unittest.TestCase):
                            json=self.tasks_api, status_code=200)
             s = Singularity('server')
             s.update()
-            q = []
+            q = queue.Queue()
             sc = SingularityCarbon(s, q)
-            sc.flush_metrics()
+            sc.flush_all()
 
             # Queue should be populated
-            self.assertTrue(q)
+            self.assertFalse(q.empty())
 
             # Test plaintext protocol
-            self.assertEqual(len(q[0].split()), 3)
+            a = q.get()
+            self.assertEqual(len(a.split()), 3)
 
             # Make sure that every metric has been captured
+            q.put(a)
             all_metric_names = set(sc.metric_mapping.values())
-            metric_names_from_q = set([m.split()[0] for m in q])
-            self.assertEqual(all_metric_names, metric_names_from_q)
+            metric_names_from_q = set()
+            while True:
+                try:
+                    a = q.get(block=None)
+                except queue.Empty:
+                    break
+                metric_names_from_q.add(a.split()[0])
+            self.assertEqual(all_metric_names, metric_names_from_q, metric_names_from_q)
 
             # Test pickle protocol
-            q2 = []
+            q2 = queue.Queue()
             sc2 = SingularityCarbon(s, q2, pickle=True)
-            sc2.flush_metrics()
+            sc2.flush_all()
 
-            self.assertTrue(q2)
-            self.assertIsInstance(q2[0], tuple)
-            self.assertIsInstance(q2[0][1], tuple)
+            self.assertFalse(q2.empty())
+            a = q2.get()
+            self.assertIsInstance(a, tuple)
+            self.assertIsInstance(a[1], tuple)
 
 
     def test_get_singularity_lookup(self):

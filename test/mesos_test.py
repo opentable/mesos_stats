@@ -1,6 +1,7 @@
 import time
 import unittest
 import requests
+import multiprocessing
 import requests_mock
 
 from mesos_stats.mesos import Mesos, MesosStatsException, MesosCarbon
@@ -108,49 +109,59 @@ class MesosTest(unittest.TestCase):
             mesos = Mesos(master_list=['mesos1'])
             mesos.update()
 
-        q = []
+        q = multiprocessing.Queue()
         mc = MesosCarbon(mesos, q, pickle=False)
         mc.flush_slave_metrics()
 
-        self.assertTrue(q)
-        self.assertEqual(q[0].split()[0], 'slave.slave1.cpus.total')
-        self.assertEqual(q[0].split()[1], '32')
+        try:
+            self.assertTrue(q.qsize())
+        except NotImplementedError: # Not supported in Mac OS X
+            pass
+        a = q.get()
+        self.assertEqual(a.split()[0], 'slave.slave1.cpus.total')
+        self.assertEqual(a.split()[1], '32')
 
         # Test that the percent is scaled up by 100, 0.1 * 100 = 10.0
-        self.assertEqual(q[1].split()[1], '10.0')
+        b = q.get()
+        self.assertEqual(b.split()[1], '10.0')
 
         # Test slave metrics is empty after flushing
         self.assertFalse(mesos.slave_metrics)
 
-        q2 = []
+        q2 = multiprocessing.Queue()
         mc2 = MesosCarbon(mesos, q2, pickle=False)
         mc2.flush_cluster_metrics()
 
-        self.assertTrue(q2)
-        self.assertEqual(q2[0].split()[0], 'cluster.cpus.total')
-        self.assertEqual(q2[0].split()[1], '32')
+        try:
+            self.assertTrue(q2.qsize())
+        except NotImplementedError: # Not supported in Mac OS X
+            pass
+        a = q2.get()
+        self.assertEqual(a.split()[0], 'cluster.cpus.total')
+        self.assertEqual(a.split()[1], '32')
 
         # Test that the percent is scaled up by 100, 0.1 * 100 = 10.0
-        self.assertEqual(q2[1].split()[1], '10.0')
+        b = q2.get()
+        self.assertEqual(b.split()[1], '10.0')
 
         # Test cluster metrics is empty after flushing
         self.assertFalse(mesos.cluster_metrics)
 
         # Test pickle and non-pickle output
-        q3 = []
+        q3 = multiprocessing.Queue()
         mc3 = MesosCarbon(mesos, q3, pickle=False)
         mc3._add_to_queue('test.testing', 123.0)
-        self.assertTrue(q3)
-        self.assertEqual(len(q3[0].split()), 3)
+        a = q3.get()
+        self.assertEqual(len(a.split()), 3)
 
-        q4 = []
+        q4 = multiprocessing.Queue()
         mc4 = MesosCarbon(mesos, q4, pickle=True)
         mc4._add_to_queue('test.testing', 123.0)
-        self.assertTrue(q4)
-        self.assertIsInstance(q4[0], tuple)
-        self.assertIsInstance(q4[0][1], tuple)
-        self.assertEqual(q4[0][0], 'test.testing')
-        self.assertEqual(q4[0][1][1], 123.0)
+        a = q4.get()
+        self.assertIsInstance(a, tuple)
+        self.assertIsInstance(a[1], tuple)
+        self.assertEqual(a[0], 'test.testing')
+        self.assertEqual(a[1][1], 123.0)
 
     def test_get_executors(self):
         with requests_mock.Mocker(real_http=True) as m:
@@ -243,14 +254,18 @@ class MesosTest(unittest.TestCase):
                            json=tasks_api, status_code=200)
 
             s = Singularity('server')
+            s.update()
             mesos = Mesos(master_list=['mesos1'])
             mesos.update()
-            q = []
+            q = multiprocessing.Queue()
             mc = MesosCarbon(mesos, q, singularity=s)
             mc.send_alternate_executor_metrics()
 
-            self.assertTrue(q)
-            self.assertEqual(len(q), 5)
-            self.assertTrue(q[0].split()[0].startswith('tasks.my-request_2.'))
+            try:
+                self.assertEqual(len(q.qsize()), 5)
+            except NotImplementedError: # Not supported in Mac OS X
+                pass
+            a = q.get()
+            self.assertTrue(a.split()[0].startswith('tasks.my-request_2.'))
 
 

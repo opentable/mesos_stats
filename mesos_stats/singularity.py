@@ -91,7 +91,7 @@ class SingularityCarbon:
         self.pickle = pickle
 
 
-    def flush_metrics(self):
+    def flush_all(self):
         counter = 0
         # flush state metrics
         for k, v in self.singularity.state.items():
@@ -122,6 +122,6 @@ class SingularityCarbon:
         # The pickle protocol accepts a tuple
         # [(path, (timestamp, value)), ...]
         if not self.pickle:
-            self.queue.append('{} {} {}'.format(metric_name, metric_value, ts))
+            self.queue.put('{} {} {}'.format(metric_name, metric_value, ts))
         else:
-            self.queue.append((metric_name, (ts, metric_value)))
+            self.queue.put((metric_name, (ts, metric_value)))
