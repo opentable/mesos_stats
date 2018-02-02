@@ -83,7 +83,7 @@ def main_loop(mesos, carbon, singularity, pickle):
 
     while True:
         try:
-            # wait_until_beginning_of_clock_minute()
+            wait_until_beginning_of_clock_minute()
             with Timer("Entire collect and send cycle"):
                 timestamp = time.time()
                 now = datetime.fromtimestamp(timestamp)

@@ -4,7 +4,7 @@ import pickle
 import queue
 from mesos_stats.util import log
 
-CHUNK_SIZE = 5000  # Maximum number of stats to send to Carbon in one go
+CHUNK_SIZE = 500  # Maximum number of stats to send to Carbon in one go
 
 
 class Carbon:
@@ -86,7 +86,7 @@ class Carbon:
         return res
 
     def send_metrics_plaintext(self, metrics_list):
-        log('Send metrics via Plaintext')
+        log('Sending {} metrics via Plaintext'.format(len(metrics_list)))
         self.ensure_connected(self.port)
 
         data = []
