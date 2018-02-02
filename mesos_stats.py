@@ -2,7 +2,6 @@ import os
 import sys
 import time
 import traceback
-import pprint
 import queue
 from datetime import datetime
 
@@ -18,11 +17,12 @@ from mesos_stats.singularity import Singularity, SingularityCarbon
 
 def str_to_bool(s):
     if s == 'True':
-         return True
+        return True
     elif s == 'False':
-         return False
+        return False
     else:
-         raise ValueError
+        raise ValueError
+
 
 def init_env():
     master_list = os.environ['MESOS_MASTER'].split(',')
@@ -38,7 +38,6 @@ def init_env():
 
     if not all([master_list, carbon_host, graphite_prefix]):
         print('One or more configuration env not set')
-        print_config()
         sys.exit(0)
 
     print("Got configuration...")
@@ -60,6 +59,7 @@ def init_env():
 
     return (mesos, carbon, singularity, carbon_pickle)
 
+
 def wait_until_beginning_of_clock_minute():
     iter_start = time.time()
     now = datetime.fromtimestamp(iter_start)
@@ -71,22 +71,19 @@ def wait_until_beginning_of_clock_minute():
 def main_loop(mesos, carbon, singularity, pickle):
     should_exit = False
     # self-monitoring
-    last_cycle_time = 0
-    last_collection_time = 0
-    last_send_time = 0
-    assert all([mesos, carbon]) # Mesos and Carbon is mandatory
+    assert all([mesos, carbon])  # Mesos and Carbon is mandatory
 
     metrics_queue = queue.Queue()
     if singularity:
         singularity_carbon = SingularityCarbon(singularity, metrics_queue,
-                                              pickle)
+                                               pickle)
         mesos_carbon = MesosCarbon(mesos, metrics_queue, singularity, pickle)
     else:
         mesos_carbon = MesosCarbon(mesos, metrics_queue, pickle=pickle)
 
     while True:
         try:
-            #wait_until_beginning_of_clock_minute()
+            # wait_until_beginning_of_clock_minute()
             with Timer("Entire collect and send cycle"):
                 timestamp = time.time()
                 now = datetime.fromtimestamp(timestamp)

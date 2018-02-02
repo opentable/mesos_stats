@@ -1,12 +1,10 @@
-import sys
-import re
 import time
 import requests
-import pprint
 from concurrent import futures
 from .util import log, try_get_json
 
-POOL_SIZE = 10 # Number of parallel threads to query Mesos
+POOL_SIZE = 10  # Number of parallel threads to query Mesos
+
 
 class Mesos:
     '''
@@ -16,10 +14,9 @@ class Mesos:
         self.master_list = master_list
         self.master = self._get_master()
         self.slaves = try_get_json("http://%s/slaves" % self.master)\
-                        .get('slaves', None)
+            .get('slaves', None)
         self.slave_metrics = {}
         self.executors = []
-
 
     def _get_master(self):
         ''' Get a working master hostname '''
@@ -36,9 +33,8 @@ class Mesos:
             except requests.exceptions.RequestException as e:
                 print(str(e))
                 continue
-        else: # We've failed to reach all masters, quit.
+        else:  # We've failed to reach all masters, quit.
             raise MesosStatsException('Unable to reach Mesos Masters')
-
 
     def update(self):
         ''' Retrieves slave and master metrics '''
@@ -49,46 +45,42 @@ class Mesos:
             self.cluster_metrics = self._get_cluster_metrics()
 
         self.slaves = try_get_json("http://%s/slaves" % self.master)\
-                        .get('slaves', None)
+            .get('slaves', None)
         self.update_ts = int(time.time())
         if self.slaves:
             self.slave_metrics = self._get_slave_metrics()
             self.executors = self._get_executors()
             log('Total number of executors = {}'.format(sum(len(e)
-                                            for e in self.executors)))
-
+                for e in self.executors)))
 
     def _get_cluster_metrics(self):
         return try_get_json("http://{}/metrics/snapshot".format(self.master))
-
 
     def _get_slave_metrics(self):
         if not self.slaves:
             return
 
         def task(slave):
-            metric = try_get_json("http://{}:{}/metrics/snapshot"\
-                                 .format(slave['hostname'], slave['port']))
+            metric = try_get_json("http://{}:{}/metrics/snapshot"
+                                  .format(slave['hostname'], slave['port']))
             return(slave.get('hostname'), metric)
 
         ex = futures.ThreadPoolExecutor(max_workers=POOL_SIZE)
         results = ex.map(task, self.slaves)
-        return { r[0]: r[1] for r in results }
-
+        return {r[0]: r[1] for r in results}
 
     def _get_executors(self):
         if not self.slaves:
             return
 
         def task(slave):
-            executors = try_get_json("http://{}:{}/monitor/statistics.json"\
-                                 .format(slave['hostname'], slave['port']))
+            executors = try_get_json("http://{}:{}/monitor/statistics.json"
+                                     .format(slave['hostname'], slave['port']))
             return(slave.get('hostname'), executors)
 
         ex = futures.ThreadPoolExecutor(max_workers=POOL_SIZE)
         results = ex.map(task, self.slaves)
-        return { r[0]: r[1] for r in results }
-
+        return {r[0]: r[1] for r in results}
 
     def reset(self):
         self.cluster_metrics = {}
@@ -157,13 +149,11 @@ class MesosCarbon:
         "mem_rss_bytes":         eprefix + ".mem.rss_bytes",
     }
 
-
     def __init__(self, mesos, queue, singularity=None, pickle=False):
         self.mesos = mesos
         self.pickle = pickle
         self.queue = queue
         self.singularity = singularity
-
 
     def _convert(self, metric_name, value):
         ''' We use this to clean up or do any custom conversions '''
@@ -172,7 +162,6 @@ class MesosCarbon:
             value = value * 100.0
         return (metric_name, value)
 
-
     def flush_all(self):
         self.flush_cluster_metrics()
         self.flush_slave_metrics()
@@ -180,10 +169,8 @@ class MesosCarbon:
             self.send_alternate_executor_metrics()
         self.flush_executor_metrics()
 
-
     def _clean_metric_name(self, name):
         return name.replace('.', '_')
-
 
     def flush_slave_metrics(self):
         counter = 0
@@ -193,7 +180,7 @@ class MesosCarbon:
                 try:
                     metric_name = self.slave_metric_mapping[k]\
                                     .format(slave_name)
-                except KeyError: # Skip metrics that are not defined above
+                except KeyError:  # Skip metrics that are not defined above
                     continue
                 (metric_name, v) = self._convert(metric_name, v)
                 self._add_to_queue(metric_name, v)
@@ -201,20 +188,18 @@ class MesosCarbon:
         log('flushed {} slave metrics'.format(counter))
         self.mesos.slave_metrics = None
 
-
     def flush_cluster_metrics(self):
         counter = 0
         for k, v in self.mesos.cluster_metrics.items():
             try:
                 metric_name = self.master_metric_mapping[k]
-            except KeyError: # Skip metrics that are not defined above
+            except KeyError:  # Skip metrics that are not defined above
                 continue
             (metric_name, v) = self._convert(metric_name, v)
             self._add_to_queue(metric_name, v)
             counter += 1
         log('flushed {} cluster metrics'.format(counter))
         self.mesos.cluster_metrics = None
-
 
     def flush_executor_metrics(self):
         counter = 0
@@ -232,8 +217,6 @@ class MesosCarbon:
         log('flushed {} executor metrics'.format(counter))
         self.mesos.executor_metrics = None
 
-
-
     def send_alternate_executor_metrics(self):
         '''
             This method is similar to flush_executor_metrics but avoids having
@@ -247,7 +230,7 @@ class MesosCarbon:
         mapping = {}
         for k, v in self.executor_metric_mapping.items():
             mapping[k] = v.replace('slave.{}.executors.singularity.tasks.{}',
-                                  'tasks.{}')
+                                   'tasks.{}')
 
         sing_lookup = self.singularity.get_singularity_lookup()
         counter = 0
@@ -255,8 +238,8 @@ class MesosCarbon:
             for e in executors:
                 if e['framework_id'] == 'Singularity':
                     task_name = sing_lookup.get(e['executor_id'],
-                                               e['executor_id'])
-                else: # Use mesos task names for non singularity tasks
+                                                e['executor_id'])
+                else:  # Use mesos task names for non singularity tasks
                     task_name = e['executor_id']
 
                 task_name = self._clean_metric_name(task_name)
@@ -270,7 +253,6 @@ class MesosCarbon:
                 counter += 1
         log('Sent {} alternate executor metrics'.format(counter))
 
-
     def _add_to_queue(self, metric_name, metric_value):
         # The carbon plaintext protocol for metrics are
         # <metric path> <metric value> <metric timestamp>
@@ -278,8 +260,7 @@ class MesosCarbon:
         # [(path, (timestamp, value)), ...]
         if not self.pickle:
             self.queue.put('{} {} {}'.format(metric_name, metric_value,
-                                                self.mesos.update_ts))
+                                             self.mesos.update_ts))
         else:
             self.queue.put((metric_name,
-                               (self.mesos.update_ts, metric_value)))
-
+                            (self.mesos.update_ts, metric_value)))

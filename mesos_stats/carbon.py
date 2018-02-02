@@ -1,13 +1,11 @@
 import socket
 import struct
-import time
-import os
-import sys
 import pickle
 import queue
 from mesos_stats.util import log
 
-CHUNK_SIZE = 5000 # Maximum number of stats to send to Carbon in one go
+CHUNK_SIZE = 5000  # Maximum number of stats to send to Carbon in one go
+
 
 class Carbon:
     def __init__(self, host, prefix, pickle=False, port=2003,
@@ -21,33 +19,28 @@ class Carbon:
         self.dry_run = dry_run
         self.timeout = 30.0
 
-
     def connect(self, port):
-        if self.sock != None:
+        if self.sock is not None:
             raise Exception("Attempt to connect an already connected socket.")
         self.port = port
         self.sock = socket.socket()
         self.sock.settimeout(self.timeout)
         self.sock.connect((self.host, self.port))
 
-
     def ensure_connected(self, port):
-        if self.sock == None:
+        if self.sock is None:
             self.connect(port)
         elif self.port != port:
             self.close()
             self.sock.connect(port)
-
 
     def close(self):
         if self.sock:
             self.sock.close()
             self.sock = None
 
-
     def send_metrics(self, metrics, timeout):
         self.timeout = timeout
-        data = []
         iterations = 1
         total = 0
         while True:
@@ -66,14 +59,12 @@ class Carbon:
         log('Sent {} datapoints to Carbon'.format(total))
         self.close()
 
-
     def _add_prefix(self, metric):
         if self.pickle:
             return ('{}.{}'.format(self.prefix, metric[0]),
                     (metric[1][0], metric[1][1]))
         else:
             return '{}.{}'.format(self.prefix, metric)
-
 
     def _get_chunk_from_queue(self, q, n):
         '''
@@ -94,19 +85,16 @@ class Carbon:
                 break
         return res
 
-
     def send_metrics_plaintext(self, metrics_list):
         log('Send metrics via Plaintext')
         self.ensure_connected(self.port)
 
         data = []
-        iterations = 0
         data = "\n".join(metrics_list) + '\n'
         sent = self.sock.sendall(data.encode())
         if sent == 0:
             raise RuntimeError("socket connection broken")
         return
-
 
     def send_metrics_pickle(self, metrics_list):
         log('Send metrics via Pickle')
@@ -117,4 +105,3 @@ class Carbon:
         message = header + payload
         self.sock.send(message)
         return
-

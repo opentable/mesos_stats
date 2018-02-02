@@ -1,7 +1,7 @@
 
 class Metric:
     def __init__(self, path, name, *measurements):
-        if measurements == None or len(measurements) == 0:
+        if measurements is None or len(measurements) == 0:
             measurements = [Each()]
         self.name = name
         self.path = path
@@ -9,7 +9,7 @@ class Metric:
         self.data = []
 
     def Add(self, datum, keys=[]):
-        if datum == None:
+        if datum is None:
             return
         self.data.append((datum[self.path], keys))
 
@@ -29,6 +29,7 @@ class Metric:
             results += f(self)
         return results
 
+
 def Each(scale=1):
     def Each_scale(metric):
         results = []
@@ -37,4 +38,3 @@ def Each(scale=1):
             results.append(metric.Datapoint(keys, d*scale))
         return results
     return Each_scale
-

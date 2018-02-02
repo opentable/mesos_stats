@@ -1,6 +1,7 @@
 import time
 from .util import log, try_get_json
 
+
 class Singularity:
     def __init__(self, host):
         self.host = host
@@ -22,28 +23,21 @@ class Singularity:
         self.disasters_stats = self.get_disasters_stats()
         self.active_tasks = self.get_active_tasks()
 
-
     def get_disasters_stats(self):
         return self._get("/disasters/stats")
-
 
     def get_state(self):
         return self._get("/state")
 
-
     def get_active_requests(self):
         return self._get("/requests")
-
 
     def get_active_tasks(self):
         return self._get("/tasks/active")
 
-
     def _get(self, uri):
         url = "http://%s/api%s" % (self.host, uri)
-        #log("Getting %s" % url)
         return try_get_json(url)
-
 
     def get_singularity_lookup(self):
         '''
@@ -84,12 +78,10 @@ class SingularityCarbon:
         "decommissioningSlaves":    "singularity.slaves.decommissioning",
     }
 
-
     def __init__(self, singularity, queue, pickle=False):
         self.singularity = singularity
         self.queue = queue
         self.pickle = pickle
-
 
     def flush_all(self):
         counter = 0
@@ -114,7 +106,6 @@ class SingularityCarbon:
             counter += 1
 
         log('flushed {} singularity metrics'.format(counter))
-
 
     def _add_to_queue(self, metric_name, metric_value, ts):
         # The carbon plaintext protocol for metrics are
