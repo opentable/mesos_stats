@@ -240,6 +240,8 @@ class MesosCarbon:
                     task_name = sing_lookup.get(e['executor_id'],
                                                 e['executor_id'])
                 else:  # Use mesos task names for non singularity tasks
+                    log('Could not find request name for : {}'
+                        .format(e['executor_id']))
                     task_name = e['executor_id']
 
                 task_name = self._clean_metric_name(task_name)
