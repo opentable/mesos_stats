@@ -207,9 +207,10 @@ class MesosCarbon:
             for e in executors:
                 for k, v in e['statistics'].items():
                     task_name = self._clean_metric_name(e['executor_id'])
+                    sn = self._clean_metric_name(slave_name)
                     try:
                         metric_name = self.executor_metric_mapping[k]\
-                                .format(slave_name, task_name)
+                                .format(sn, task_name)
                     except KeyError:
                         continue
                     self._add_to_queue(metric_name, v)
