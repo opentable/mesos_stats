@@ -1,4 +1,5 @@
 import time
+import re
 import requests
 from concurrent import futures
 from .util import log, try_get_json
@@ -218,6 +219,37 @@ class MesosCarbon:
         log('flushed {} executor metrics'.format(counter))
         self.mesos.executor_metrics = None
 
+    def _best_guess_req_name(self, name):
+        '''
+            Used when we can't match a task name to any existing Request
+        '''
+        if '---' in name:
+            # matches login_service--eu-pp_sf-7712aab4c9c893696d
+            pattern = '(\S+)---(\w+_\w+)-\S+-(\d+)-mesos_slave\S+'
+            match = re.search(pattern, name)
+            if match:
+                task_name, env, instance = match.groups()
+                log('guessed task name : {}-{}_{}'.format(task_name, env,
+                                                          instance))
+                return '{}-{}_{}'.format(task_name, env, instance)
+        if '-teamcity_' in name:
+            pattern = '(\S+)-teamcity\S+-(\d+)-mesos_\S+'
+            match = re.search(pattern, name)
+            if match:
+                task_name, instance = match.groups()
+                log('guessed task name : {}_{}'.format(task_name, instance))
+                return '{}_{}'.format(task_name, instance)
+        if 'opentable.com' in name and '_20' in name:
+            # Matches task_name_2018-01-02-1-mesos-slave-14.opentable.com
+            pattern = '(\S+)_20\S+-(\d+)-mesos_\S+'
+            match = re.search(pattern, name)
+            if match:
+                task_name, env, instance = match.groups()
+                log('guessed task name : {}_{}'.format(task_name, instance))
+                return '{}_{}'.format(task_name, instance)
+        log('Could not guess task name for : {}'.format(name))
+        return name
+
     def send_alternate_executor_metrics(self):
         '''
             This method is similar to flush_executor_metrics but avoids having
@@ -238,11 +270,13 @@ class MesosCarbon:
         for slave_name, executors in self.mesos.executors.items():
             for e in executors:
                 if e['framework_id'] == 'Singularity':
-                    task_name = sing_lookup.get(e['executor_id'],
-                                                e['executor_id'])
+                    task_name = sing_lookup.get(e['executor_id'], None)
+                    if not task_name or '---' in task_name:
+                        log('Could not match task name: {}'
+                            .format(e['executor_id']))
+                        task_name = self._best_guess_req_name(e['executor_id'])
                 else:  # Use mesos task names for non singularity tasks
-                    log('Could not find request name for : {}'
-                        .format(e['executor_id']))
+                    log('Non Singularity tasks : {}'.format(e['executor_id']))
                     task_name = e['executor_id']
 
                 task_name = self._clean_metric_name(task_name)

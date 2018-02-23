@@ -1,6 +1,4 @@
-import time
 import unittest
-import requests
 import multiprocessing
 import requests_mock
 
@@ -16,6 +14,7 @@ stream_handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(stream_handler)
 '''
 
+
 class MesosTest(unittest.TestCase):
     def setUp(self):
         self.slaves_api = {
@@ -27,13 +26,9 @@ class MesosTest(unittest.TestCase):
             ]
         }
 
-
-
-
     def test_mesos_raises_exception_for_no_master(self):
         master_list = ['mesos4', 'mesos5', 'mesos6']
         self.assertRaises(MesosStatsException, Mesos, master_list)
-
 
     def test_mesos_chooses_working_master(self):
         with requests_mock.Mocker(real_http=True) as m:
@@ -47,7 +42,6 @@ class MesosTest(unittest.TestCase):
                            json={'master/elected': 1}, status_code=200)
             mesos = Mesos(master_list=['mesos1', 'mesos2', 'mesos3'])
         self.assertEqual(mesos.master, 'mesos3')
-
 
     def test_get_slave_metrics(self):
         with requests_mock.Mocker(real_http=True) as m:
@@ -69,7 +63,6 @@ class MesosTest(unittest.TestCase):
             self.assertTrue('slave1' in slave_metrics.keys())
             self.assertTrue(isinstance(slave_metrics['slave1'], dict))
             self.assertTrue(slave_metrics['slave1']['slave/cpus_total'], 32)
-
 
     def test_mesoscarbon(self):
         with requests_mock.Mocker(real_http=True) as m:
@@ -115,11 +108,20 @@ class MesosTest(unittest.TestCase):
 
         try:
             self.assertTrue(q.qsize())
-        except NotImplementedError: # Not supported in Mac OS X
+        except NotImplementedError:  # Not supported in Mac OS X
             pass
         a = q.get()
         self.assertEqual(a.split()[0], 'slave.slave1.cpus.total')
         self.assertEqual(a.split()[1], '32')
+
+        # Test guessing request name
+        name = 'mobile_web_api---pp_sf-1612b9a643942c3eaf9c3b3bd8845aff-1_0_20_f57ac6cc7c894af1a62130618b12baff-1518165603653-2-mesos_slave8_qa_sf.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                         'mobile_web_api-pp_sf_2')
+
+        name = 'ci-custom-messages-sync-teamcity_2018_02_19T10_56_48-1519398600781-1-mesos_slave14_qa_sf_qasql_opentable_com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                         'ci-custom-messages-sync_1')
 
         # Test that the percent is scaled up by 100, 0.1 * 100 = 10.0
         b = q.get()
@@ -134,7 +136,7 @@ class MesosTest(unittest.TestCase):
 
         try:
             self.assertTrue(q2.qsize())
-        except NotImplementedError: # Not supported in Mac OS X
+        except NotImplementedError:  # Not supported in Mac OS X
             pass
         a = q2.get()
         self.assertEqual(a.split()[0], 'cluster.cpus.total')
@@ -199,22 +201,22 @@ class MesosTest(unittest.TestCase):
         with requests_mock.Mocker(real_http=True) as m:
             tasks_api = [
                 {
-                   "taskId":{
-                      "requestId":"my-request",
-                      "deployId":"teamcity_2018_01_17T00_04_40",
-                      "startedAt":1516147481669,
-                      "instanceNo":2,
-                      "host":"mesos_slave21_qa_sf.qasql.opentable.com",
-                      "sanitizedHost":"mesos_slave21_qa_sf.qasql.opentable.com",
-                      "sanitizedRackId":"FIXME",
-                      "rackId":"FIXME",
-                      "id":"my-mesos-task"
+                   "taskId": {
+                      "requestId": "my-request",
+                      "deployId": "teamcity_2018_01_17T00_04_40",
+                      "startedAt": 1516147481669,
+                      "instanceNo": 2,
+                      "host": "mesos_slave21_qa_sf.qasql.opentable.com",
+                      "sanitizedHost": "mesos_slave21_qa_sf.qasql.opentable.com",
+                      "sanitizedRackId": "FIXME",
+                      "rackId": "FIXME",
+                      "id": "my-mesos-task"
                    },
-                   "mesosTask":{
-                      "taskId":{
-                         "value":"my-mesos-task"
+                   "mesosTask": {
+                      "taskId": {
+                         "value": "my-mesos-task"
                       },
-                      "name":"pp-promoted-inventory-service",
+                      "name": "pp-promoted-inventory-service",
                     }
                 }
             ]
@@ -263,9 +265,7 @@ class MesosTest(unittest.TestCase):
 
             try:
                 self.assertEqual(len(q.qsize()), 5)
-            except NotImplementedError: # Not supported in Mac OS X
+            except NotImplementedError:  # Not supported in Mac OS X
                 pass
             a = q.get()
             self.assertTrue(a.split()[0].startswith('tasks.my-request_2.'))
-
-

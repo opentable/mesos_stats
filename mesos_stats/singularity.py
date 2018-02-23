@@ -35,6 +35,9 @@ class Singularity:
     def get_active_tasks(self):
         return self._get("/tasks/active")
 
+    def get_scheduled_tasks(self):
+        return self._get("/tasks/scheduled")
+
     def _get(self, uri):
         url = "http://%s/api%s" % (self.host, uri)
         return try_get_json(url)
