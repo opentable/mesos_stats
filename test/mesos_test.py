@@ -123,6 +123,10 @@ class MesosTest(unittest.TestCase):
         self.assertEqual(mc._best_guess_req_name(name),
                          'ci-custom-messages-sync_1')
 
+        name = 'ci-waitlist-worker-.2016.11.03T16.16.59-1519659540491-2-mesos_slave9_qa_sf.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                         'ci-waitlist-worker_2')
+
         # Test that the percent is scaled up by 100, 0.1 * 100 = 10.0
         b = q.get()
         self.assertEqual(b.split()[1], '10.0')
