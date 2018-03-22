@@ -215,7 +215,7 @@ def new_slave_task_metrics(mesos, requests_json=None):
 
                     instance_no = t['executor_id'].split('-mesos-slave', 1)[0][-1]
 
-                task = "{}_{}".format(task_name, instance_no)
+                task = "{}.{}".format(task_name, instance_no)
                 m.Add(t["statistics"], [task,])
     num_metrics = sum([len(m.data) for m in tc_metrics])
     log('Number of new-style task metrics : {}'.format(num_metrics))
