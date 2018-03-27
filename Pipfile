@@ -8,6 +8,8 @@ url = "https://pypi.python.org/simple"
 [packages]
 
 requests = "*"
+httpretty = "*"
+requests-mock = "*"
 
 
 [dev-packages]

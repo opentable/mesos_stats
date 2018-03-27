@@ -3,6 +3,7 @@ import time
 import sys
 import requests
 
+
 def try_get_json(url, timeout=20):
     t = time.time()
     try:
@@ -26,14 +27,18 @@ def try_get_json(url, timeout=20):
         log("GET %s failed - Non 200 HTTP Error" % url)
         return False
 
+
 def log(message):
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     print('%s %s' % (ts, message))
 
+
 class Timer:
     def __init__(self, name):
         self.name = name
+
     def __enter__(self):
         self.time = time.time()
+
     def __exit__(self, type, value, traceback):
         return log("%s took %ss" % (self.name, time.time() - self.time))

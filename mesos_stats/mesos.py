@@ -1,260 +1,306 @@
-import sys
+import time
 import re
-import functools
-from multiprocessing import Pool
-from .metric import Metric, Each
+import requests
+from concurrent import futures
 from .util import log, try_get_json
 
-POOL_SIZE = 10 # Number of parallel processes to query Mesos
+POOL_SIZE = 10  # Number of parallel threads to query Mesos
+
 
 class Mesos:
-    def __init__(self, master_pid):
-        self.original_master_pid = master_pid
-        self.leader_pid = master_pid
-        self.leader_state = None
-        self.slave_states = None
+    '''
+        Mesos class to retrieve and store metrics
+    '''
+    def __init__(self, master_list):
+        self.master_list = master_list
+        self.master = self._get_master()
+        self.slaves = try_get_json("http://%s/slaves" % self.master)\
+            .get('slaves', None)
+        self.slave_metrics = {}
+        self.executors = []
 
+    def _get_master(self):
+        ''' Get a working master hostname '''
+        for master in self.master_list:
+            # Let's test each master host in turn to get a working one
+            try:
+                url = "http://{}/metrics/snapshot".format(master)
+                res = try_get_json(url)
+                try:
+                    if res['master/elected']:
+                        return master
+                except KeyError:
+                    pass
+            except requests.exceptions.RequestException as e:
+                print(str(e))
+                continue
+        else:  # We've failed to reach all masters, quit.
+            raise MesosStatsException('Unable to reach Mesos Masters')
 
-    def show_cache_info(self):
-        log("get_slave cache : {}".format(self.get_slave.cache_info()))
-        log("get_slave_stats cache : {}".format(self.get_slave.cache_info()))
-        log("get_cluster_stats cache : {}".format(self.get_slave.cache_info()))
+    def update(self):
+        ''' Retrieves slave and master metrics '''
+        self.cluster_metrics = self._get_cluster_metrics()
+        # Let's make sure we are still connected to the master
+        if not self.cluster_metrics['master/elected']:
+            self._get_master()
+            self.cluster_metrics = self._get_cluster_metrics()
 
+        self.slaves = try_get_json("http://%s/slaves" % self.master)\
+            .get('slaves', None)
+        self.update_ts = int(time.time())
+        if self.slaves:
+            self.slave_metrics = self._get_slave_metrics()
+            self.executors = self._get_executors()
+            log('Total number of executors = {}'.format(sum(len(e)
+                for e in self.executors)))
+
+    def _get_cluster_metrics(self):
+        return try_get_json("http://{}/metrics/snapshot".format(self.master))
+
+    def _get_slave_metrics(self):
+        if not self.slaves:
+            return
+
+        def task(slave):
+            metric = try_get_json("http://{}:{}/metrics/snapshot"
+                                  .format(slave['hostname'], slave['port']))
+            return(slave.get('hostname'), metric)
+
+        ex = futures.ThreadPoolExecutor(max_workers=POOL_SIZE)
+        results = ex.map(task, self.slaves)
+        return {r[0]: r[1] for r in results}
+
+    def _get_executors(self):
+        if not self.slaves:
+            return
+
+        def task(slave):
+            executors = try_get_json("http://{}:{}/monitor/statistics.json"
+                                     .format(slave['hostname'], slave['port']))
+            return(slave.get('hostname'), executors)
+
+        ex = futures.ThreadPoolExecutor(max_workers=POOL_SIZE)
+        results = ex.map(task, self.slaves)
+        return {r[0]: r[1] for r in results}
 
     def reset(self):
-        self.show_cache_info()
-        self.leader_state = None
-        self.slave_states = None
-        self.get_slave.cache_clear()
-        self.get_slave_statistics.cache_clear()
-        self.get_cluster_stats.cache_clear()
-
-
-    def get_master_state(self):
-        url = "http://%s/state.json" % self.leader_pid
-        log("Getting master state from: %s" % url)
-        return try_get_json(url)
-
-    def state(self):
-        if self.leader_state != None:
-            return self.leader_state
-        try:
-            master = self.get_master_state()
-        except:
-            if self.leader_pid == self.original_master_pid:
-                log("Already using originally configured mesos master pid.")
-                raise MesosStatsException("Unable to locate any Mesos master \
-                                    at {}".format(self.original_master_pid))
-            log("Unable to hit last known leader, falling back to configured \
-                master: {}".format(self.original_master_pid))
-            self.leader_pid = self.original_master_pid
-            return self.state()
-        if master == None:
-            return None
-        if master["pid"] == master["leader"]:
-            self.leader_state = master
-            return self.leader_state
-        else:
-            self.leader_pid = master["leader"]
-        return self.state()
-
-
-    @functools.lru_cache(maxsize=None)
-    def get_cluster_stats(self):
-        if self.state() == None:
-            return None
-        return try_get_json("http://%s/metrics/snapshot" \
-                            % self.state()["leader"])
-
-    @functools.lru_cache(maxsize=None)
-    def get_slave(self, slave_pid):
-        return try_get_json("http://%s/metrics/snapshot" % slave_pid)
-
-
-    @functools.lru_cache(maxsize=None)
-    def get_slave_statistics(self, slave_pid):
-        return try_get_json("http://%s/monitor/statistics.json" % slave_pid)
-
-
-    def _update_slave_state(self, slave_state):
-        slave_pid = slave_state['pid']
-        if slave_state == None:
-            log("Slave lost: %s" % slave_pid)
-            return
-        slave_state = self.get_slave(slave_pid)
-        tasks = self.get_slave_statistics(slave_pid)
-        return(slave_pid, slave_state, tasks)
-
-
-    def slaves(self):
-        if self.slave_states != None:
-            return self.slave_states
-        self.slave_states = {}
-        if self.state() == None:
-            return []
-        with Pool(processes=POOL_SIZE, maxtasksperchild=1) as pool:
-            result = pool.map(self._update_slave_state,
-                              self.state()["slaves"], chunksize=1)
-        '''
-        with Pool(processes=POOL_SIZE) as pool:
-            result = pool.map(self._update_slave_state,
-                              self.state()["slaves"])
-        '''
-        for (slave_pid, slave_state, tasks) in result:
-            self.slave_states[slave_pid] = slave_state
-            self.slave_states[slave_pid]["task_details"] = tasks
-
-        return self.slave_states
+        self.cluster_metrics = {}
+        self.slaves = {}
+        self.slave_metrics = {}
+        self.executors = []
+        self.update_ts = None
 
 
 class MesosStatsException(Exception):
     pass
 
 
-def slave_metrics(mesos):
-    metrics = [
-        Metric("slave/mem_total",        "slave.[].mem.total"),
-        Metric("slave/mem_used",         "slave.[].mem.used"),
-        Metric("slave/mem_percent",      "slave.[].mem.percent",
-               Each(scale=100)),
-        Metric("slave/cpus_total",       "slave.[].cpus.total"),
-        Metric("slave/cpus_used",        "slave.[].cpus.used"),
-        Metric("slave/cpus_percent",     "slave.[].cpus.percent",
-               Each(scale=100)),
-        Metric("slave/disk_total",       "slave.[].disk.total"),
-        Metric("slave/disk_used",        "slave.[].disk.total"),
-        Metric("slave/tasks_running",    "slave.[].tasks.running"),
-        Metric("slave/tasks_staging",    "slave.[].tasks.staging"),
-        Metric("system/load_1min",       "slave.[].system.load.1min"),
-        Metric("system/load_5min",       "slave.[].system.load.5min"),
-        Metric("system/load_15min",      "slave.[].system.load.15min"),
-        Metric("system/mem_free_bytes",  "slave.[].system.mem.free.bytes"),
-        Metric("system/mem_total_bytes", "slave.[].system.mem.total.bytes"),
-    ]
-
-    for pid in mesos.slaves():
-        slave = mesos.slaves()[pid]
-        for m in metrics:
-            m.Add(slave, [pid])
-
-    return metrics
-
-
-def old_slave_task_metrics(mesos):
+class MesosCarbon:
     '''
-    Add old style task metrics so we are backward compatible
+        Convert Mesos metrics into Carbon compatible metrics
+        and flushes them into the given queue
     '''
-    prefix = "slave.[].executors.singularity.tasks.[]"
-    metrics = [
-        Metric("cpus_system_time_secs", prefix + ".cpus.system_time_secs"),
-        Metric("cpus_user_time_secs",   prefix + ".cpus.user_time_secs"),
-        Metric("cpus_limit",            prefix + ".cpus.limit"),
-        Metric("mem_limit_bytes",       prefix + ".mem.limit_bytes"),
-        Metric("mem_rss_bytes",         prefix + ".mem.rss_bytes"),
-    ]
-    for pid in mesos.slaves():
-        slave = mesos.slaves()[pid]
-        # This is the old schema to retain for backwards compatibility
-        # The full task names are used
-        for m in metrics:
-            for t in slave["task_details"]:
-                m.Add(t["statistics"], [pid, t["executor_id"]])
-    num_metrics = sum([len(m.data) for m in metrics])
-    log('Number of old-style task metrics : {}'.format(num_metrics))
-    return metrics
+    master_metric_mapping = {
+        "master/cpus_percent":      "cluster.cpus.percent",
+        "master/cpus_total":        "cluster.cpus.total",
+        "master/cpus_used":         "cluster.cpus.used",
+        "master/mem_percent":       "cluster.mem.percent",
+        "master/mem_total":         "cluster.mem.total",
+        "master/mem_used":          "cluster.mem.used",
+        "master/disk_percent":      "cluster.disk.percent",
+        "master/disk_total":        "cluster.disk.total",
+        "master/disk_used":         "cluster.disk.used",
+        "master/slaves_connected":  "cluster.slaves.connected",
+        "master/tasks_failed":      "cluster.tasks.failed",
+        "master/tasks_error":       "cluster.tasks.error",
+        "master/tasks_finished":    "cluster.tasks.finished",
+        "master/tasks_killed":      "cluster.tasks.killed",
+        "master/tasks_lost":        "cluster.tasks.lost",
+        "master/tasks_running":     "cluster.tasks.running",
+        "master/tasks_staging":     "cluster.tasks.staging",
+        "master/tasks_starting":    "cluster.tasks.starting",
+        "master/tasks_unreachable": "cluster.tasks.unreachable",
+        "master/dropped_messages":  "cluster.messages.dropped",
+    }
 
+    slave_metric_mapping = {
+        "slave/mem_total":          "slave.{}.mem.total",
+        "slave/mem_used":           "slave.{}.mem.used",
+        "slave/mem_percent":        "slave.{}.mem.percent",
+        "slave/cpus_total":         "slave.{}.cpus.total",
+        "slave/cpus_used":          "slave.{}.cpus.used",
+        "slave/cpus_percent":       "slave.{}.cpus.percent",
+        "slave/disk_total":         "slave.{}.disk.total",
+        "slave/disk_used":          "slave.{}.disk.total",
+        "slave/tasks_running":      "slave.{}.tasks.running",
+        "slave/tasks_staging":      "slave.{}.tasks.staging",
+        "system/load_1min":         "slave.{}.system.load.1min",
+        "system/load_5min":         "slave.{}.system.load.5min",
+        "system/load_15min":        "slave.{}.system.load.15min",
+        "system/mem_free_bytes":    "slave.{}.system.mem.free.bytes",
+        "system/mem_total_bytes":   "slave.{}.system.mem.total.bytes",
+    }
 
-def new_slave_task_metrics(mesos, requests_json=None):
-    '''
-    This is the new schema
-    Create a metrics schema that is independent of slave IDs and Teamcity
-    version numbers.
-    e.g. mesos_stats.(env).tasks.(task_name)-(instance).mem.limit_bytes
-    '''
-    # We rely on 2 ways to get the request ID to use in the Graphite schema
-    # The first way relies no regex which covers 99% of the cases
-    regex = re.compile(r'(?P<task_name>\S+)-'
-                       'teamcity\S+-(?P<instance_no>\d{1,2})'
-                       '-mesos_slave\S+'
-    )
-    # The second way just compares the task name to see if it has any of the
-    # request names as a prefix
-    if requests_json:
-        requests = [r['request']['id'] for r in requests_json]
-    else:
-        requests = []
+    eprefix = "slave.{}.executors.singularity.tasks.{}"
+    executor_metric_mapping = {
+        "cpus_system_time_secs": eprefix + ".cpus.system_time_secs",
+        "cpus_user_time_secs":   eprefix + ".cpus.user_time_secs",
+        "cpus_limit":            eprefix + ".cpus.limit",
+        "mem_limit_bytes":       eprefix + ".mem.limit_bytes",
+        "mem_rss_bytes":         eprefix + ".mem.rss_bytes",
+    }
 
-    tc_prefix = "tasks.[]"
-    tc_metrics = [
-        Metric("cpus_system_time_secs", tc_prefix + ".cpus.system_time_secs"),
-        Metric("cpus_user_time_secs", tc_prefix + ".cpus.user_time_secs"),
-        Metric("cpus_limit", tc_prefix + ".cpus.limit"),
-        Metric("mem_limit_bytes", tc_prefix + ".mem.limit_bytes"),
-        Metric("mem_rss_bytes", tc_prefix + ".mem.rss_bytes"),
-    ]
-    for pid in mesos.slaves():
-        slave = mesos.slaves()[pid]
-        for m in tc_metrics:
-            for t in slave["task_details"]:
-                match = regex.search(t["executor_id"])
-                if match:
-                    r = match.groupdict()
-                    task_name = r['task_name']
-                    instance_no = r['instance_no']
-                else:
-                    # Try and match the task name with one of the requests
-                    # We'll then use the request name as the task name
-                    for r in requests:
-                        if t['executor_id'].startswith(r):
-                            task_name = r
-                            break
-                    else:
-                        # We should never get here but just in case
-                        task_instance = t['executor_id'].split('-mesos-slave', 1)[0]
-                        task_name = task_instance.rsplit('-', 1)[0]
+    def __init__(self, mesos, queue, singularity=None, pickle=False):
+        self.mesos = mesos
+        self.pickle = pickle
+        self.queue = queue
+        self.singularity = singularity
 
-                    instance_no = t['executor_id'].split('-mesos-slave', 1)[0][-1]
+    def _convert(self, metric_name, value):
+        ''' We use this to clean up or do any custom conversions '''
+        # Scale all percentages since Mesos reports percent as 0.0 - 0.1
+        if 'percent' in metric_name:
+            value = value * 100.0
+        return (metric_name, value)
 
-                task = "{}_{}".format(task_name, instance_no)
-                m.Add(t["statistics"], [task,])
-    num_metrics = sum([len(m.data) for m in tc_metrics])
-    log('Number of new-style task metrics : {}'.format(num_metrics))
-    return tc_metrics
+    def flush_all(self):
+        self.flush_cluster_metrics()
+        self.flush_slave_metrics()
+        if self.singularity:
+            self.send_alternate_executor_metrics()
+        self.flush_executor_metrics()
 
+    def _clean_metric_name(self, name):
+        return name.replace('.', '_')
 
-def slave_task_metrics(mesos, requests_json=None):
-    ms = []
-    ms.extend(old_slave_task_metrics(mesos))
-    ms.extend(new_slave_task_metrics(mesos, requests_json))
-    return ms
+    def flush_slave_metrics(self):
+        counter = 0
+        for slave_name, metrics in self.mesos.slave_metrics.items():
+            for k, v in metrics.items():
+                slave_name = self._clean_metric_name(slave_name)
+                try:
+                    metric_name = self.slave_metric_mapping[k]\
+                                    .format(slave_name)
+                except KeyError:  # Skip metrics that are not defined above
+                    continue
+                (metric_name, v) = self._convert(metric_name, v)
+                self._add_to_queue(metric_name, v)
+                counter += 1
+        log('flushed {} slave metrics'.format(counter))
+        self.mesos.slave_metrics = None
 
+    def flush_cluster_metrics(self):
+        counter = 0
+        for k, v in self.mesos.cluster_metrics.items():
+            try:
+                metric_name = self.master_metric_mapping[k]
+            except KeyError:  # Skip metrics that are not defined above
+                continue
+            (metric_name, v) = self._convert(metric_name, v)
+            self._add_to_queue(metric_name, v)
+            counter += 1
+        log('flushed {} cluster metrics'.format(counter))
+        self.mesos.cluster_metrics = None
 
-def cluster_metrics(mesos):
-    metrics = [
-        Metric("master/cpus_percent",     "cluster.cpus.percent",
-               Each(scale=100)),
-        Metric("master/cpus_total",       "cluster.cpus.total"),
-        Metric("master/cpus_used",        "cluster.cpus.used"),
-        Metric("master/mem_percent",      "cluster.mem.percent",
-               Each(scale=100)),
-        Metric("master/mem_total",        "cluster.mem.total"),
-        Metric("master/mem_used",         "cluster.mem.used"),
-        Metric("master/disk_percent",     "cluster.disk.percent",
-               Each(scale=100)),
-        Metric("master/disk_total",       "cluster.disk.total"),
-        Metric("master/disk_used",        "cluster.disk.used"),
-        Metric("master/slaves_connected", "cluster.slaves.connected"),
-        Metric("master/tasks_failed",     "cluster.tasks.failed"),
-        Metric("master/tasks_finished",   "cluster.tasks.finished"),
-        Metric("master/tasks_killed",     "cluster.tasks.killed"),
-        Metric("master/tasks_lost",       "cluster.tasks.lost"),
-        Metric("master/tasks_running",    "cluster.tasks.running"),
-        Metric("master/tasks_staging",    "cluster.tasks.staging"),
-        Metric("master/tasks_starting",   "cluster.tasks.starting"),
-    ]
+    def flush_executor_metrics(self):
+        counter = 0
+        for slave_name, executors in self.mesos.executors.items():
+            for e in executors:
+                for k, v in e['statistics'].items():
+                    task_name = self._clean_metric_name(e['executor_id'])
+                    sn = self._clean_metric_name(slave_name)
+                    try:
+                        metric_name = self.executor_metric_mapping[k]\
+                                .format(sn, task_name)
+                    except KeyError:
+                        continue
+                    self._add_to_queue(metric_name, v)
+                counter += 1
+        log('flushed {} executor metrics'.format(counter))
+        self.mesos.executor_metrics = None
 
-    for m in metrics:
-        m.Add(mesos.get_cluster_stats())
+    def _best_guess_req_name(self, name):
+        '''
+            Used when we can't match a task name to any existing Request
+        '''
+        if '---' in name:
+            # matches login_service--eu-pp_sf-7712aab4c9c893696d
+            pattern = '(\S+)---(\w+_\w+)-\S+-(\d+)-mesos_slave\S+'
+            match = re.search(pattern, name)
+            if match:
+                task_name, env, instance = match.groups()
+                log('guessed task name : {}-{}_{}'.format(task_name, env,
+                                                          instance))
+                return '{}-{}_{}'.format(task_name, env, instance)
+        if '-teamcity_' in name:
+            # matches ci-nei-teamcity_2018_01_04T12_4-1-mesos_slave4_qa_sf
+            pattern = '(\S+)-teamcity\S+-(\d+)-mesos_\S+'
+            match = re.search(pattern, name)
+            if match:
+                task_name, instance = match.groups()
+                log('guessed task name : {}_{}'.format(task_name, instance))
+                return '{}_{}'.format(task_name, instance)
+        if 'opentable.com' in name:
+            pattern = '(\S+)(_|-\.)20\d{2}.\S+-(\d+)-mesos_\S+'
+            # Matches task_name_2018-01-02-1-mesos-slave-14.opentable.com
+            # OR
+            # Matches task_name-.2018-01-02-1-mesos-slave-14.opentable.com
+            match = re.search(pattern, name)
+            if match:
+                task_name, _, instance = match.groups()
+                log('guessed task name : {}_{}'.format(task_name, instance))
+                return '{}_{}'.format(task_name, instance)
+        log('Could not guess task name for : {}'.format(name))
+        return name
 
-    return metrics
+    def send_alternate_executor_metrics(self):
+        '''
+            This method is similar to flush_executor_metrics but avoids having
+            the slave names in the metric_name. All task metrics will be
+            populated under {prefix}.tasks.task_name.*.*
 
+            Another feature of this method is that task names will be
+            shortened to just their Singularity request name and their
+            respective instance numbers
+        '''
+        mapping = {}
+        for k, v in self.executor_metric_mapping.items():
+            mapping[k] = v.replace('slave.{}.executors.singularity.tasks.{}',
+                                   'tasks.{}')
+
+        sing_lookup = self.singularity.get_singularity_lookup()
+        counter = 0
+        for slave_name, executors in self.mesos.executors.items():
+            for e in executors:
+                if e['framework_id'] == 'Singularity':
+                    task_name = sing_lookup.get(e['executor_id'], None)
+                    if not task_name or '---' in task_name:
+                        log('Could not match task name: {}'
+                            .format(e['executor_id']))
+                        task_name = self._best_guess_req_name(e['executor_id'])
+                else:  # Use mesos task names for non singularity tasks
+                    log('Non Singularity tasks : {}'.format(e['executor_id']))
+                    task_name = e['executor_id']
+
+                task_name = self._clean_metric_name(task_name)
+
+                for k, v in e['statistics'].items():
+                    try:
+                        metric_name = mapping[k].format(task_name)
+                    except KeyError:
+                        continue
+                    self._add_to_queue(metric_name, v)
+                counter += 1
+        log('Sent {} alternate executor metrics'.format(counter))
+
+    def _add_to_queue(self, metric_name, metric_value):
+        # The carbon plaintext protocol for metrics are
+        # <metric path> <metric value> <metric timestamp>
+        # The pickle protocol accepts a tuple
+        # [(path, (timestamp, value)), ...]
+        if not self.pickle:
+            self.queue.put('{} {} {}'.format(metric_name, metric_value,
+                                             self.mesos.update_ts))
+        else:
+            self.queue.put((metric_name,
+                            (self.mesos.update_ts, metric_value)))

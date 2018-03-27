@@ -2,52 +2,63 @@ import os
 import sys
 import time
 import traceback
+import queue
 from datetime import datetime
 
 from mesos_stats.util import log, Timer
 from mesos_stats.mesos import (
-    cluster_metrics,
     Mesos,
+    MesosCarbon,
     MesosStatsException,
-    slave_metrics,
-    slave_task_metrics,
 )
 from mesos_stats.carbon import Carbon
-from mesos_stats.singularity import Singularity, singularity_metrics
+from mesos_stats.singularity import Singularity, SingularityCarbon
+
+
+def str_to_bool(s):
+    if s == 'True':
+        return True
+    elif s == 'False':
+        return False
+    else:
+        raise ValueError
 
 
 def init_env():
-    master_host = os.environ['MESOS_MASTER']
+    master_list = os.environ['MESOS_MASTER'].split(',')
     carbon_host = os.environ['CARBON_HOST']
     graphite_prefix = os.environ['GRAPHITE_PREFIX']
+    carbon_pickle = os.environ.get('CARBON_PICKLE', 'False')
     singularity_host = os.environ.get('SINGULARITY_HOST', None)
     carbon_port = os.environ.get('CARBON_PORT', '2003')
-    dry_run = os.environ.get('DRY_RUN', False)
-    if dry_run == 'False':
-        dry_run = False
-    master_pid = "%s:5050" % master_host
+    dry_run = os.environ.get('DRY_RUN', 'False')
 
-    if not all([master_host, carbon_host, graphite_prefix]):
+    dry_run = str_to_bool(dry_run)
+    carbon_pickle = str_to_bool(carbon_pickle)
+
+    if not all([master_list, carbon_host, graphite_prefix]):
         print('One or more configuration env not set')
-        print_config()
         sys.exit(0)
 
     print("Got configuration...")
-    print("MESOS MASTER:     %s" % master_pid)
+    print("MESOS MASTERS:     %s" % master_list)
     print("CARBON:           %s" % carbon_host)
     print("GRAPHITE PREFIX:  %s" % graphite_prefix)
+    print("CARBON PICKLE:  %s" % carbon_pickle)
     print("SINGULARITY HOST: %s" % singularity_host)
     print("DRY RUN (TEST MODE): %s" % dry_run)
     print("==========================================")
 
-    mesos = Mesos(master_pid)
+    assert(isinstance(master_list, list))
+    mesos = Mesos(master_list)
     carbon = Carbon(carbon_host, graphite_prefix, port=int(carbon_port),
-                    pickle=False, dry_run=dry_run)
+                    pickle=carbon_pickle, dry_run=dry_run)
 
     if singularity_host:
         singularity = Singularity(singularity_host)
 
-    return (mesos, carbon, singularity)
+    return (mesos, carbon, singularity, carbon_pickle)
+
 
 def wait_until_beginning_of_clock_minute():
     iter_start = time.time()
@@ -56,13 +67,20 @@ def wait_until_beginning_of_clock_minute():
     log("Sleeping for %ss" % sleep_time)
     time.sleep(sleep_time)
 
-def main_loop(mesos, carbon, singularity):
+
+def main_loop(mesos, carbon, singularity, pickle):
     should_exit = False
     # self-monitoring
-    last_cycle_time = 0
-    last_collection_time = 0
-    last_send_time = 0
-    assert all([mesos, carbon]) # Mesos and Carbon is mandatory
+    assert all([mesos, carbon])  # Mesos and Carbon is mandatory
+
+    metrics_queue = queue.Queue()
+    if singularity:
+        singularity_carbon = SingularityCarbon(singularity, metrics_queue,
+                                               pickle)
+        mesos_carbon = MesosCarbon(mesos, metrics_queue, singularity, pickle)
+    else:
+        mesos_carbon = MesosCarbon(mesos, metrics_queue, pickle=pickle)
+
     while True:
         try:
             wait_until_beginning_of_clock_minute()
@@ -71,28 +89,24 @@ def main_loop(mesos, carbon, singularity):
                 now = datetime.fromtimestamp(timestamp)
                 log("Timestamp: %s (%s)" % (now, timestamp))
                 cycle_timeout = timestamp + 59.0
-                metrics = []
-                if mesos:
-                    with Timer("Mesos metrics collection"):
-                        mesos.reset()
-                        metrics.extend(slave_metrics(mesos))
-                        if singularity:
-                            metrics.extend(slave_task_metrics(mesos,
-                                        singularity.active_requests()))
-                        else:
-                            metrics.extend(slave_task_metrics(mesos))
-                        metrics.extend(cluster_metrics(mesos))
                 if singularity:
                     with Timer("Singularity metrics collection"):
                         singularity.reset()
-                        metrics.extend(singularity_metrics(singularity))
-                if not metrics:
+                        singularity.update()
+                        singularity_carbon.flush_all()
+                if mesos:
+                    with Timer("Mesos metrics collection"):
+                        mesos.reset()
+                        mesos.update()
+                        mesos_carbon.flush_all()
+                if not metrics_queue:
                     log("No stats this time; sleeping")
-                else:
-                    send_timeout = cycle_timeout - time.time()
-                    log("Sending stats (timeout %ss)" % send_timeout)
-                    with Timer("Sending stats to graphite"):
-                        carbon.send_metrics(metrics, send_timeout, timestamp)
+                    continue
+
+                send_timeout = cycle_timeout - time.time()
+                log("Sending stats (timeout %ss)" % send_timeout)
+                with Timer("Sending stats to graphite"):
+                    carbon.send_metrics(metrics_queue, send_timeout)
         except MesosStatsException as e:
             log("%s" % e)
         except (KeyboardInterrupt, SystemExit):
@@ -115,12 +129,13 @@ def main_loop(mesos, carbon, singularity):
             if should_exit:
                 return
 
+
 if __name__ == '__main__':
-    (mesos, carbon, singularity) = init_env()
+    (mesos, carbon, singularity, pickle) = init_env()
     start_time = time.time()
     print("Start time: %s" % datetime.fromtimestamp(start_time))
     try:
-        main_loop(mesos, carbon, singularity)
+        main_loop(mesos, carbon, singularity, pickle)
     except (KeyboardInterrupt, SystemExit):
         print("Bye!")
         sys.exit(0)
