@@ -25,9 +25,9 @@ def str_to_bool(s):
 
 
 def init_env():
-    master_list = os.environ['MESOS_MASTER'].split(',')
-    carbon_host = os.environ['CARBON_HOST']
-    graphite_prefix = os.environ['GRAPHITE_PREFIX']
+    master_list = os.environ.get('MESOS_MASTER', '').split(',')
+    carbon_host = os.environ.get('CARBON_HOST', None)
+    graphite_prefix = os.environ.get('GRAPHITE_PREFIX', None)
     carbon_pickle = os.environ.get('CARBON_PICKLE', 'False')
     singularity_host = os.environ.get('SINGULARITY_HOST', None)
     carbon_port = os.environ.get('CARBON_PORT', '2003')
@@ -36,18 +36,23 @@ def init_env():
     dry_run = str_to_bool(dry_run)
     carbon_pickle = str_to_bool(carbon_pickle)
 
+    def config_print():
+        print("=" * 80)
+        print("MESOS MASTERS:     %s" % master_list)
+        print("CARBON:           %s" % carbon_host)
+        print("GRAPHITE PREFIX:  %s" % graphite_prefix)
+        print("CARBON PICKLE:  %s" % carbon_pickle)
+        print("SINGULARITY HOST: %s" % singularity_host)
+        print("DRY RUN (TEST MODE): %s" % dry_run)
+        print("=" * 80)
+
     if not all([master_list, carbon_host, graphite_prefix]):
-        print('One or more configuration env not set')
+        print('ERROR : One or more configuration env not set')
+        print('MESOS_MASTERS, CARBON, and GRAPHITE_PREFIX needs to be set')
+        config_print()
         sys.exit(0)
 
-    print("Got configuration...")
-    print("MESOS MASTERS:     %s" % master_list)
-    print("CARBON:           %s" % carbon_host)
-    print("GRAPHITE PREFIX:  %s" % graphite_prefix)
-    print("CARBON PICKLE:  %s" % carbon_pickle)
-    print("SINGULARITY HOST: %s" % singularity_host)
-    print("DRY RUN (TEST MODE): %s" % dry_run)
-    print("==========================================")
+    config_print()
 
     assert(isinstance(master_list, list))
     mesos = Mesos(master_list)
