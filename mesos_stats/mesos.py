@@ -283,6 +283,9 @@ class MesosCarbon:
                     task_name = e['executor_id']
 
                 task_name = self._clean_metric_name(task_name)
+                # have instance numbers be a separate directory
+                # this converts task_name_3 to task_name.3
+                task_name = re.sub('_(\d+$)', '.\g<1>', task_name)
 
                 for k, v in e['statistics'].items():
                     try:

@@ -272,4 +272,4 @@ class MesosTest(unittest.TestCase):
             except NotImplementedError:  # Not supported in Mac OS X
                 pass
             a = q.get()
-            self.assertTrue(a.split()[0].startswith('tasks.my-request_2.'))
+            self.assertTrue(a.split()[0].startswith('tasks.my-request.2.'))
