@@ -91,7 +91,12 @@ class Carbon:
 
         data = []
         data = "\n".join(metrics_list) + '\n'
-        sent = self.sock.sendall(data.encode())
+        try:
+            sent = self.sock.sendall(data.encode())
+        except socket.error as e:  # Just retry once
+            log('Error during send, Reconnecting')
+            self.connect(self.port)
+            sent = self.sock.sendall(data.encode())
         if sent == 0:
             raise RuntimeError("socket connection broken")
         return
@@ -103,5 +108,12 @@ class Carbon:
         payload = pickle.dumps(metrics_list, protocol=2)
         header = struct.pack("!L", len(payload))
         message = header + payload
-        self.sock.send(message)
+        try:
+            self.sock.send(message)
+        except socket.error as e:  # Just retry once
+            log('Error during send, Reconnecting')
+            self.connect(self.port)
+            sent = self.sock.send(message)
+        if sent == 0:
+            raise RuntimeError("socket connection broken")
         return
