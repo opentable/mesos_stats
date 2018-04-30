@@ -25,6 +25,7 @@ class Carbon:
         self.port = port
         self.sock = socket.socket()
         self.sock.settimeout(self.timeout)
+        log('Connecting to {}:{}'.format(self.host, self.port))
         self.sock.connect((self.host, self.port))
 
     def ensure_connected(self, port):
@@ -40,6 +41,9 @@ class Carbon:
             self.sock = None
 
     def send_metrics(self, metrics, timeout):
+        # Initiate new connection everytime we send to prevent ELB Blackhole
+        self.connect(self.port)
+
         self.timeout = timeout
         iterations = 1
         total = 0
@@ -93,13 +97,10 @@ class Carbon:
         data = "\n".join(metrics_list) + '\n'
         try:
             sent = self.sock.sendall(data.encode())
-        except socket.error as e:  # Just retry once
-            log('Error during send, Reconnecting')
-            self.connect(self.port)
-            sent = self.sock.sendall(data.encode())
-        if sent == 0:
+        except socket.error as e:
+            log('ERROR: Socket  error during send')
             raise RuntimeError("socket connection broken")
-        return
+        return sent
 
     def send_metrics_pickle(self, metrics_list):
         log('Send metrics via Pickle')
@@ -109,11 +110,8 @@ class Carbon:
         header = struct.pack("!L", len(payload))
         message = header + payload
         try:
-            self.sock.send(message)
-        except socket.error as e:  # Just retry once
-            log('Error during send, Reconnecting')
-            self.connect(self.port)
             sent = self.sock.send(message)
-        if sent == 0:
+        except socket.error as e:
+            log('ERROR: Socket  error during send')
             raise RuntimeError("socket connection broken")
-        return
+        return sent
