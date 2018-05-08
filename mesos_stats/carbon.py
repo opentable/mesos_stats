@@ -41,9 +41,6 @@ class Carbon:
             self.sock = None
 
     def send_metrics(self, metrics, timeout):
-        # Initiate new connection everytime we send to prevent ELB Blackhole
-        self.connect(self.port)
-
         self.timeout = timeout
         iterations = 1
         total = 0
@@ -98,6 +95,8 @@ class Carbon:
         try:
             sent = self.sock.sendall(data.encode())
         except socket.error as e:
+            # This will kill the task via a runtime error
+            # every time we get a socket error
             log('ERROR: Socket  error during send')
             raise RuntimeError("socket connection broken")
         return sent
