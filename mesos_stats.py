@@ -114,6 +114,11 @@ def main_loop(mesos, carbon, singularity, pickle):
                     carbon.send_metrics(metrics_queue, send_timeout)
         except MesosStatsException as e:
             log("%s" % e)
+        except RuntimeError as e:
+            log("%s" % e)
+            should_exit = True
+            sys.exit(1)
+            break
         except (KeyboardInterrupt, SystemExit):
             print("Bye!")
             should_exit = True
