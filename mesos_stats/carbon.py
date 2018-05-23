@@ -94,6 +94,9 @@ class Carbon:
         data = "\n".join(metrics_list) + '\n'
         try:
             sent = self.sock.sendall(data.encode())
+        except BrokenPipeError as e:
+            log('ERROR: Broken Pipe Error during send')
+            raise RuntimeError("BrokenPipe Error")
         except socket.error as e:
             # This will kill the task via a runtime error
             # every time we get a socket error
@@ -110,6 +113,9 @@ class Carbon:
         message = header + payload
         try:
             sent = self.sock.send(message)
+        except BrokenPipeError as e:
+            log('ERROR: Broken Pipe Error during send')
+            raise RuntimeError("BrokenPipe Error")
         except socket.error as e:
             log('ERROR: Socket  error during send')
             raise RuntimeError("socket connection broken")
