@@ -5,11 +5,11 @@ from .util import log, try_get_json
 class Singularity:
     def __init__(self, host):
         self.host = host
-        self.update()
         self.state = {}
         self.active_requests = []
         self.disaster_stats = {}
         self.active_tasks = []
+        self.update()
 
     def reset(self):
         self.state = {}
@@ -27,13 +27,18 @@ class Singularity:
         return self._get("/disasters/stats")
 
     def get_state(self):
-        return self._get("/state")
+        state = self._get("/state")
+        state['decommissionedSlaves'] = len(self.get_decommisioned_slaves())
+        return state
 
     def get_active_requests(self):
         return self._get("/requests")
 
     def get_active_tasks(self):
         return self._get("/tasks/active")
+
+    def get_decommisioned_slaves(self):
+        return self._get("/slaves?state=DECOMMISSIONED")
 
     def get_scheduled_tasks(self):
         return self._get("/tasks/scheduled")
@@ -79,6 +84,7 @@ class SingularityCarbon:
         "deadSlaves":               "singularity.slaves.dead",
         "numLostSlaves":            "singularity.slaves.lost",
         "decommissioningSlaves":    "singularity.slaves.decommissioning",
+        "decommissionedSlaves":     "singularity.slaves.decommissioned",
     }
 
     def __init__(self, singularity, queue, pickle=False):
