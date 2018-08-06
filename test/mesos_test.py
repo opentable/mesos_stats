@@ -252,6 +252,8 @@ class MesosTest(unittest.TestCase):
                            json={'master/elected': 1}, status_code=200)
             m.register_uri('GET', 'http://server/api/state',
                            json={}, status_code=200)
+            m.register_uri('GET', 'http://server/api/slaves?state=DECOMMISSIONED',
+                           json={}, status_code=200)
             m.register_uri('GET', 'http://server/api/requests',
                            json=[], status_code=200)
             m.register_uri('GET', 'http://server/api/disasters/stats',
