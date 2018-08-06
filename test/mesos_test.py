@@ -1,3 +1,5 @@
+import sys
+sys.path.append("/Users/hsirivella/mesos_stats/mesos_stats")
 import unittest
 import multiprocessing
 import requests_mock
@@ -126,6 +128,18 @@ class MesosTest(unittest.TestCase):
         name = 'ci-waitlist-worker-.2016.11.03T16.16.59-1519659540491-2-mesos_slave9_qa_sf.qasql.opentable.com-FIXME'
         self.assertEqual(mc._best_guess_req_name(name),
                          'ci-waitlist-worker_2')
+
+        name = 'frontdoor-rcci-sf-corp-ltahmazyan_2018_08_03T22_50_44-1533336646076-1-rc_pp_sf_mesos_agent_07.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                'frontdoor-rcci-sf-corp-ltahmazyan_1')
+
+        name = 'billingengine-billingmanagement-website-rcci-eberry_2018_06_19T21_54_34-1532361961711-1-rc_pp_sf_mesos_agent_04.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                'billingengine-billingmanagement-website-rcci-eberry_1')
+
+        name = 'rcpp-sf-frontdoor-teamcity_2018_07_26T22_23_28-1532643930852-2-rc_pp_sf_mesos_agent_02.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                'rcpp-sf-frontdoor_2')
 
         # Test that the percent is scaled up by 100, 0.1 * 100 = 10.0
         b = q.get()
