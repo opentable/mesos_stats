@@ -127,6 +127,18 @@ class MesosTest(unittest.TestCase):
         self.assertEqual(mc._best_guess_req_name(name),
                          'ci-waitlist-worker_2')
 
+        name = 'frontdoor-rcci-sf-corp-ltahmazyan_2018_08_03T22_50_44-1533336646076-1-rc_pp_sf_mesos_agent_07.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                'frontdoor-rcci-sf-corp-ltahmazyan_1')
+
+        name = 'billingengine-billingmanagement-website-rcci-eberry_2018_06_19T21_54_34-1532361961711-1-rc_pp_sf_mesos_agent_04.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                'billingengine-billingmanagement-website-rcci-eberry_1')
+
+        name = 'rcpp-sf-frontdoor-teamcity_2018_07_26T22_23_28-1532643930852-2-rc_pp_sf_mesos_agent_02.qasql.opentable.com-FIXME'
+        self.assertEqual(mc._best_guess_req_name(name),
+                'rcpp-sf-frontdoor_2')
+
         # Test that the percent is scaled up by 100, 0.1 * 100 = 10.0
         b = q.get()
         self.assertEqual(b.split()[1], '10.0')

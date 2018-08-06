@@ -225,7 +225,7 @@ class MesosCarbon:
         '''
         if '---' in name:
             # matches login_service--eu-pp_sf-7712aab4c9c893696d
-            pattern = '(\S+)---(\w+_\w+)-\S+-(\d+)-mesos_slave\S+'
+            pattern = '(\S+)---(\w+_\w+)-\S+-(\d+)[-\w+_\w+]*[_|-]mesos_\S+'
             match = re.search(pattern, name)
             if match:
                 task_name, env, instance = match.groups()
@@ -234,14 +234,14 @@ class MesosCarbon:
                 return '{}-{}_{}'.format(task_name, env, instance)
         if '-teamcity_' in name:
             # matches ci-nei-teamcity_2018_01_04T12_4-1-mesos_slave4_qa_sf
-            pattern = '(\S+)-teamcity\S+-(\d+)-mesos_\S+'
+            pattern = '(\S+)-teamcity\S+-(\d+)[-\w+_\w+]*[_|-]mesos_\S+'
             match = re.search(pattern, name)
             if match:
                 task_name, instance = match.groups()
                 log('guessed task name : {}_{}'.format(task_name, instance))
                 return '{}_{}'.format(task_name, instance)
         if 'opentable.com' in name:
-            pattern = '(\S+)(_|-\.)20\d{2}.\S+-(\d+)-mesos_\S+'
+            pattern = '(\S+)(_|-\.)20\d{2}.\S+-(\d+)[-\w+_\w+]*[_|-]mesos_\S+'
             # Matches task_name_2018-01-02-1-mesos-slave-14.opentable.com
             # OR
             # Matches task_name-.2018-01-02-1-mesos-slave-14.opentable.com
