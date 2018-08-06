@@ -1,5 +1,3 @@
-import sys
-sys.path.append("/Users/hsirivella/mesos_stats/mesos_stats")
 import unittest
 import multiprocessing
 import requests_mock
