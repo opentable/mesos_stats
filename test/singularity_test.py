@@ -145,6 +145,8 @@ class MesosTest(unittest.TestCase):
                            json=self.disaster_api, status_code=200)
             m.register_uri('GET', 'http://server/api/tasks/active',
                            json=self.tasks_api, status_code=200)
+            m.register_uri('GET', 'http://server/api/slaves?state=DECOMMISSIONED',
+                           json={}, status_code=200)
             s = Singularity('server')
             s.update()
             q = queue.Queue()
@@ -191,6 +193,8 @@ class MesosTest(unittest.TestCase):
                            json=self.disaster_api, status_code=200)
             m.register_uri('GET', 'http://server/api/tasks/active',
                            json=self.tasks_api, status_code=200)
+            m.register_uri('GET', 'http://server/api/slaves?state=DECOMMISSIONED',
+                           json={}, status_code=200)
             s = Singularity('server')
             s.update()
         mapping = s.get_singularity_lookup()
