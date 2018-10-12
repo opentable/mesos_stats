@@ -45,6 +45,8 @@ class Mesos:
             self._get_master()
             self.cluster_metrics = self._get_cluster_metrics()
 
+        self.framework_metrics = self._get_framework_metrics()
+
         self.slaves = try_get_json("http://%s/slaves" % self.master)\
             .get('slaves', None)
         self.update_ts = int(time.time())
@@ -53,6 +55,9 @@ class Mesos:
             self.executors = self._get_executors()
             log('Total number of executors = {}'.format(sum(len(e)
                 for e in self.executors)))
+
+    def _get_framework_metrics(self):
+        return try_get_json("http://{}/frameworks".format(self.master))
 
     def _get_cluster_metrics(self):
         return try_get_json("http://{}/metrics/snapshot".format(self.master))
@@ -150,6 +155,20 @@ class MesosCarbon:
         "mem_rss_bytes":         eprefix + ".mem.rss_bytes",
     }
 
+    framework_metric_mapping = {
+        "disk": "frameworks.{}.resources.disk",
+        "mem":  "frameworks.{}.resources.mem",
+        "gpus": "frameworks.{}.resources.gpus",
+        "cpus": "frameworks.{}.resources.cpus",
+    }
+
+    fw_task_metric_mapping = {
+        "disk": "frameworks.{}.tasks.{}.disk",
+        "mem":  "frameworks.{}.tasks.{}.mem",
+        "gpus": "frameworks.{}.tasks.{}.gpus",
+        "cpus": "frameworks.{}.tasks.{}.cpus",
+    }
+
     def __init__(self, mesos, queue, singularity=None, pickle=False):
         self.mesos = mesos
         self.pickle = pickle
@@ -169,9 +188,12 @@ class MesosCarbon:
         if self.singularity:
             self.send_alternate_executor_metrics()
         self.flush_executor_metrics()
+        self.flush_framework_metrics()
+        self.flush_framework_task_metrics()
 
     def _clean_metric_name(self, name):
-        return name.replace('.', '_')
+        name = name.replace('.', '_')
+        return name.replace(' ', '_')
 
     def flush_slave_metrics(self):
         counter = 0
@@ -218,6 +240,39 @@ class MesosCarbon:
                 counter += 1
         log('flushed {} executor metrics'.format(counter))
         self.mesos.executor_metrics = None
+
+    def flush_framework_metrics(self):
+        counter = 0
+        for framework in self.mesos.framework_metrics['frameworks']:
+            for k, v in framework['used_resources'].items():
+                fw_name = self._clean_metric_name(framework['name'])
+                try:
+                    metric_name = self.framework_metric_mapping[k]\
+                            .format(fw_name)
+                except KeyError:
+                    continue
+                self._add_to_queue(metric_name, v)
+            counter += 1
+        log('flushed {} framework metrics'.format(counter))
+
+    def flush_framework_task_metrics(self):
+        counter = 0
+        for framework in self.mesos.framework_metrics['frameworks']:
+            if framework['id'] == 'Singularity':
+                continue
+            for task in framework['tasks']:
+                for k, v in task['resources'].items():
+                    fw_name = self._clean_metric_name(framework['name'])
+                    task_name = self._clean_metric_name(task['name'])
+                    try:
+                        metric_name = self.fw_task_metric_mapping[k]\
+                                .format(fw_name, task_name)
+                    except KeyError:
+                        continue
+                    self._add_to_queue(metric_name, v)
+                counter += 1
+        log('flushed {} framework task metrics'.format(counter))
+        self.mesos.framework_metrics = None
 
     def _best_guess_req_name(self, name):
         '''
