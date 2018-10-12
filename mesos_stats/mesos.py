@@ -158,14 +158,12 @@ class MesosCarbon:
     framework_metric_mapping = {
         "disk": "frameworks.{}.resources.disk",
         "mem":  "frameworks.{}.resources.mem",
-        "gpus": "frameworks.{}.resources.gpus",
         "cpus": "frameworks.{}.resources.cpus",
     }
 
     fw_task_metric_mapping = {
         "disk": "frameworks.{}.tasks.{}.disk",
         "mem":  "frameworks.{}.tasks.{}.mem",
-        "gpus": "frameworks.{}.tasks.{}.gpus",
         "cpus": "frameworks.{}.tasks.{}.cpus",
     }
 
